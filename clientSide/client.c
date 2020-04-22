@@ -22,9 +22,8 @@ void configure(char* hostName, char* port)
     close(fd);
 }
 
-char* getHostName(int fd)
+void getHostName(int fd, char* buffer)
 {
-    char buffer[256];
     memset(buffer, '\0', 256);
     int bytesRead;
     int index = 0;
@@ -44,8 +43,6 @@ char* getHostName(int fd)
             index ++;
         }
     } while(bytesRead > 0);
-
-    return buffer;
 }
 
 int getPortNum(int fd)
@@ -106,8 +103,44 @@ void create(char* projName)
     }
 
     fd = open("./.configure", O_RDONLY);
-    server = gethostbyname(getHostName(fd));
+    char hostName[256];
+    getHostName(fd, hostName);
+    server = gethostbyname(hostName);
+    if(server == NULL)
+    {
+        printf("Error: no such host.\n");
+        return;
+    }
 
+    bzero((char*)(&serverAddr), sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    bcopy((char*)(server->h_addr), (char*)(&serverAddr.sin_addr.s_addr), server->h_length);
+    serverAddr.sin_port = htons(port);
+
+    if(connect(sock, (struct sockaddr*)(&serverAddr), sizeof(serverAddr)) < 0)
+    {
+        printf("Error: could not connect.\n");
+        return;
+    }
+
+    /*Test Send Command: THIS WORKS*/
+    //char* msgToServer = "yerrrrr\0";
+    //send(sock, msgToServer, strlen(msgToServer), 0);
+
+    //Send a message to the server with the name of the proj. to be created
+    //createProject:<lengthOfProjName>:projName
+
+    int lenProjName = strlen(projName);
+    //printf("%s\n", (char*)(lenProjName));//HOW TO CONVERT TO STRING???
+
+
+    char* msg = (char*)(malloc((strlen("createProject:") + strlen(projName)) * sizeof(char)));
+    strcpy(msg, "createProject:");
+    //strcat(msg, );
+    strcat(msg, projName);
+    send(sock, msg, strlen(msg), 0);
+
+    return; 
 }
 
 //First step: ./client configure argv[2], argv[3] 
@@ -124,7 +157,7 @@ int main(int argc, char *argv[])
     //create step
     else if(strcmp(argv[1], "create") == 0)
     {
-        create(argv[1]);
+        create(argv[2]);
     }
 
     //add step

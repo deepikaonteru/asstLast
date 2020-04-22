@@ -5,7 +5,61 @@
 #include <sys/socket.h> 
 #include <netinet/in.h> 
 #include <stdlib.h> 
-#include <string.h> 
+#include <string.h>
+
+//COMMAND FLAGS:
+//1: createProject
+int readCommand(int sock)
+{
+    char buffer[100];
+    int bytesRead;
+    int index = 0;
+
+    do
+    {
+        char c = 0;
+        bytesRead = read(sock, &c, sizeof(char));
+
+        if(c == ':')
+        {
+            break;
+        }
+        else
+        {
+            buffer[index] = c;
+            index ++;
+        }
+    } while(bytesRead > 0);
+
+    if(strcmp(buffer, "createProject") == 0)
+    {
+        return 1;
+    }
+    return -1;
+}
+
+void readUntilDelim(int sock, char* buffer)
+{
+    int bytesRead;
+    int index = 0;
+
+    do
+    {
+        char c = 0;
+        bytesRead = read(sock, &c, sizeof(char));
+
+        if(c == ':')
+        {
+            break;
+        }
+        else
+        {
+            buffer[index] = c;
+            index ++;
+        }
+    } while(bytesRead > 0);
+}
+
 int main(int argc, char *argv[]) 
 { 
     if(argc != 2)
@@ -55,7 +109,16 @@ int main(int argc, char *argv[])
             }
             else
             {
-                printf("Connected to client.\n");
+                //printf("Connected to client.\n");
+                int cmd = readCommand(newSocket);
+                
+                //Check for cmd
+                if(cmd == 1)
+                {
+                    //CREATE function
+                    //READ FOR NUMBER OF BYTES
+                }
+                /*
                 numBytesRead = read(newSocket, buffer, 1023);
                 if(numBytesRead < 0)
                 {
@@ -63,8 +126,11 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
-                    printf("Message from Client: %s.\n", buffer);
+                    
                 }
+
+                memset(buffer, '\0', strlen(buffer));
+                */
             }
         }
     }
