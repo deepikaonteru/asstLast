@@ -130,6 +130,7 @@ void create(char* projName)
     //Send a message to the server with the name of the proj. to be created
     //createProject:<lengthOfProjName>:projName
 
+    /*
     int lenProjName = strlen(projName);
     //printf("%s\n", (char*)(lenProjName));//HOW TO CONVERT TO STRING???
 
@@ -139,6 +140,33 @@ void create(char* projName)
     //strcat(msg, );
     strcat(msg, projName);
     send(sock, msg, strlen(msg), 0);
+    */
+    char* baseCmd = (char*)(malloc((strlen("cr:") + strlen(projName) + 1) * sizeof(char)));
+    strcpy(baseCmd, "cr:");
+    strcat(baseCmd, projName);
+    strcat(baseCmd, "\0");
+    
+    int numBytesToSend = strlen(baseCmd);
+    char numBytesBuffer[10];
+    memset(numBytesBuffer, '\0', 10 * sizeof(char));
+    sprintf(numBytesBuffer, "%d", numBytesToSend);
+
+    char* fullCmd = (char*)(malloc((strlen(numBytesBuffer) + 1 + strlen(baseCmd) + 1) * sizeof(char)));
+    strcpy(fullCmd, numBytesBuffer);
+    strcat(fullCmd, ":");
+    strcat(fullCmd, baseCmd);
+    strcat(fullCmd, "\0");
+    //printf("%s\n", fullCmd);
+
+    free(baseCmd);
+    
+    send(sock, fullCmd, strlen(fullCmd), 0);
+
+    //expect some message in return, or some .Manifest, then create project locally
+    char resultCode[4];
+    memset(resultCode, '\0', 4);
+    read(sock, resultCode, 3);
+    printf("%d\n", atoi(resultCode));
 
     return; 
 }
