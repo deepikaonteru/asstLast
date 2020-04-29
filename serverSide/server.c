@@ -1,4 +1,3 @@
-// Server side C/C++ program to demonstrate Socket programming 
 #include <unistd.h> 
 #include <stdio.h> 
 #include <sys/types.h>
@@ -8,15 +7,111 @@
 #include <fcntl.h>
 #include <stdlib.h> 
 #include <string.h>
+#include "socketBuffer.h"
+char SERVER_REPOS[] = "./serverRepos";
+char DOT_VERSION[] = ".version";
+char DOT_HISTORY[] = ".history";
+
+
+long int findFileSize(char *fileName) {
+		
+	struct stat buffer;
+	int status = stat(fileName, &buffer);
+	// if permission available
+	if(status == 0) {
+		return buffer.st_size;
+	}
+	return -1;
+}
+
+char *readFileContents(char *fileName) {
+	if(!fileExistsCheck(fileName)) {
+		printf("Unable to read file contents. File %s does not exist.", fileName);
+		return NULL;
+	}
+	char *result = malloc(sizeof(char) * (findFileSize(fileName) + 10));
+	
+	// Now write file char by char on the socket		
+	int fileFd = open(fileName, O_RDONLY, 0777);
+	int i = 0;
+	while (read(fileFd, &result[i], 1) == 1) {
+		i++;
+	}
+
+	close(fileFd);
+	result[i] = '\0';
+	return result;
+
+}
+
+char *readCurrentVersion(char *projName) {
+	char *path = malloc(sizeof(char) * (strlen(projName) + strlen(DOT_VERSION) + 40 + strlen(SERVER_REPOS)));
+	sprintf(path, "%s/%s/%s", SERVER_REPOS, projName, DOT_VERSION);
+	
+	char *result = readFileContents(path);
+	free(path);
+	return result;
+}
+
+int fileExistsCheck(char *fileName) {
+	struct stat buffer;
+	return (stat(fileName, &buffer) == 0);
+}
+
+void writeFileToSocket(int sock, char *projName, const char *filePath) {
+	
+	// Check if project exists.
+	printf("Writing File %s in project: %s to client.\n", filePath, projName);
+	char *path = malloc(sizeof(char) * (strlen(projName) + strlen(filePath) + 50 + strlen(SERVER_REPOS)));
+	
+	// Read current version of project.
+    char *version = readCurrentVersion(projName);
+	
+	// file path
+	sprintf(path, "%s/%s/%s/%s", SERVER_REPOS, projName, version, filePath);
+	free(version);
+	
+	// Check if file exists.
+	if(!fileExistsCheck(path)) {
+		printf("File does not exist: %s\n", path);
+	} else {
+		
+		long fileSize = findFileSize(path);				
+		int fileFd = open(path, O_RDONLY, 0777);
+		
+		sprintf(path, "%d:%s%ld:", strlen(filePath), filePath, fileSize);
+		write(sock, path, strlen(path));
+		
+		// Now write file char by char on the socket	
+		char c;
+		while (read(fileFd, &c, 1) == 1) {
+			write(sock, &c, 1);
+		}
+        
+		close(fileFd);
+	}
+
+	free(path);
+}
+
+// <failed: error :
+void writeErrorToSocket(int sock, char *error) {
+	write(sock, "failed:", strlen("failed:"));
+	write(sock, error, strlen(error));
+	write(sock, ":", 1);
+}
 
 void serverCreate(char* projName, int sock)
 {
     //Step 1: attempt to make directory.
     // - If mkdir() returns 0, it made a directory
     // - If mkdir() returns -1, it failed to make a directory, check errno and report that to client
-    char* path = (char*)(malloc((2 + strlen(projName)) * sizeof(char)));
-    strcpy(path, "./");
+    char* path = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
+    strcpy(path, SERVER_REPOS);
+    strcat(path, "/");
     strcat(path, projName);
+    //printf("%s\n",path);
+
     int mkdirResult = mkdir(path, 00777);
     if(mkdirResult == -1)
     {
@@ -24,21 +119,46 @@ void serverCreate(char* projName, int sock)
         if(errno == EEXIST)
         {
             //printf("Error: project %s already exists on server.\n", projName);
-            char* errCode = "400";
-            send(sock, errCode, strlen(errCode), 0);
-        }
+            //char* errCode = "400";
+            //send(sock, errCode, strlen(errCode), 0);
+            writeErrorToSocket(sock, "Project Already exists.");
+        }  
     }
     else if(mkdirResult == 0)
     {
-        //made it, initialize .Manifest
-        char* msgCode = "200";
-        send(sock, msgCode, strlen(msgCode), 0);
+        //made it, now initialize .Manifest
+        //char* msgCode = "200";
+        //send(sock, msgCode, strlen(msgCode), 0);
 
-        char* pathToManifest = (char*)(malloc((strlen(path) + strlen("/.Manifest")) * sizeof(char)));
+        char version[10] = "1";
+
+        //make version file
+        sprintf(path, "%s/%s/%s", SERVER_REPOS, projName, DOT_VERSION);
+        int vfd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0777);	
+        write(vfd, version, strlen(version));
+        close(vfd);
+
+        // make history file 
+        sprintf(path, "%s/%s/%s", SERVER_REPOS, projName, DOT_HISTORY);
+        int hfd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0777);
+        close(hfd);
+	
+        // create version directory
+        sprintf(path, "%s/%s/%s", SERVER_REPOS, projName, version);
+        mkdir(path, 00777);
+
+        /*char* pathToManifest = (char*)(malloc((strlen(path) + strlen("/.Manifest")) * sizeof(char)));
         strcpy(pathToManifest, path);
-        strcat(pathToManifest, "/.Manifest");
-        int manifestFD = open(pathToManifest, O_WRONLY | O_CREAT, 00600);
+        strcat(pathToManifest, "/.Manifest");*/
+
+        // place .Manifest inside version directory
+        sprintf(path, "%s/%s/%s/%s", SERVER_REPOS, projName, version, ".Manifest");
+
+        int manifestFD = open(path, O_WRONLY | O_CREAT, 00600);
         write(manifestFD, "1\n", 2);
+        write(sock, "sendfile:", strlen("filesent:"));
+	    write(sock, "1:", 2); 
+		writeFileToSocket(sock, projName, path);
 
     }
 }

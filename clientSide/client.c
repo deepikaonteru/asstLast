@@ -1,4 +1,3 @@
-// Client side C/C++ program to demonstrate Socket programming 
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h> 
@@ -11,6 +10,45 @@
 #include <openssl/sha.h>
 #include <fcntl.h>
 #include <string.h> 
+#include "socketBufferC.h"
+
+void writeFileFromSocket(int sockToRead, char *baseDir) {
+	SocketBuffer *socketBuffer = createBuffer();
+
+	readTillDelimiter(socketBuffer, sockToRead, ':');
+	char *nameLenStr = readAllBuffer(socketBuffer);
+	long nameLen = atol(nameLenStr);
+	
+	readNBytes(socketBuffer, sockToRead, nameLen);
+	char *filePath = readAllBuffer(socketBuffer);
+	
+	readTillDelimiter(socketBuffer, sockToRead, ':');
+	char *contentLenStr = readAllBuffer(socketBuffer);
+	long contentLen = atol(contentLenStr);
+		
+	char *fullpath = malloc(sizeof(char) * (strlen(filePath) + 15 + strlen(baseDir)));
+	sprintf(fullpath, "%s/%s", baseDir, filePath);
+	
+	// Write data to the file now.
+	int fd = open(fullpath, O_CREAT | O_WRONLY | O_TRUNC, 0777);
+	char c;
+	long i = 0;
+	while(i++ < contentLen) {
+		read(sockToRead, &c, 1);
+		if(c == '\0') {
+			break; // Socket disconnected.
+		}
+		write(fd, &c, 1);
+	}
+	close(fd);	
+	
+	// de-allocate memory
+	freeSocketBuffer(socketBuffer);
+	free(nameLenStr);
+	free(filePath);
+	free(contentLenStr);
+	free(fullpath);
+}
 
 void configure(char* hostName, char* port)
 {
@@ -77,6 +115,80 @@ int getPortNum(int fd)
     return atoi(buffer);
 }
 
+int DirExistsCheck(char *dirName) {
+
+    DIR* dir = opendir(dirName);
+    if (dir) {
+        /* Directory exists. */
+        return 1;
+        closedir(dir);
+    } else {
+        return 0;
+    }
+
+}
+
+int fileExistsCheck(char* fName)
+{
+    struct stat buf;
+    int res = stat(fName, &buf);
+    if(res == 0)
+    {
+        return 1; //file exists
+    }
+    else
+    {
+        return 0; //file does not exist
+    }
+}
+
+int projExistsInClient(char *projName) {
+	
+	// Check if project exists
+	if(!DirExistsCheck(projName)) {
+		printf("Error: The project does not exist.\n");
+		return 0;
+	}
+	
+	char *path = malloc(sizeof(char) * (strlen(projName) + 50));
+	
+	// check if project directory contains manifest
+	sprintf(path, "%s/%s", projName, "./Manifest");
+	if(!fileExistsCheck(path)) {
+		printf("Error: Please create project first.\n");
+		free(path);
+		return 0;
+	}
+	return 1;
+}
+
+// add an entry for the the file
+// to its client's .Manifest with a new version number and hashcode
+void add(char* projName, char* filePath)
+{
+    // Check if project exists
+	if(!projExistsInClient(projName)) {
+		printf("Error: Please configure the project correctly.\n");
+		return;
+	}
+
+    char *path = malloc( strlen("./clientRepos")* (strlen(projName) + 50)) * sizeof(char));
+
+    // check if given file exists
+	sprintf(path, "%s/%s", projName, filePath);
+	if(!fileExistsCheck(path)) {
+		printf("Error: File does not exist locally in project.\n");
+		printf("Cannot to find: %s\n", path);
+		free(path);
+		return;
+	}
+
+    // check if project directory contains manifest
+	sprintf(path, "%s/%s", project, ".Manifest");
+    // Make changes to manifest: add entry with new version number and hashcode
+	int manifestFD = open(path, O_RDONLY, 0777);
+
+}
 void create(char* projName)
 {
     int sock, port, numBytes;
@@ -163,10 +275,39 @@ void create(char* projName)
     send(sock, fullCmd, strlen(fullCmd), 0);
 
     //expect some message in return, or some .Manifest, then create project locally
-    char resultCode[4];
+    SocketBuffer *socketBuffer = createBuffer();
+	
+	readTillDelimiter(socketBuffer, sock, ':');
+	char *responseCode = readAllBuffer(socketBuffer);
+	
+	if(strcmp(responseCode, "sendfile") == 0) {
+		readTillDelimiter(socketBuffer, sock, ':');
+		char *numFilesStr = readAllBuffer(socketBuffer);
+		long numFiles = atol(numFilesStr);
+		
+		// Now read N files, and save them
+		// for create, only 1 file will be sent, the .Manifest
+		while(numFiles-- > 0) {
+			writeFileFromSocket(sock, projName);
+		}
+		printf("Done.\n");
+		free(numFilesStr);
+		
+	} else {
+        //failed
+        printf("Could not create project on server.\n");		
+		readTillDelimiter(socketBuffer, sock, ':');
+		char *reason = readAllBuffer(socketBuffer);
+		printf("Reason: %s\n", reason);
+		free(reason);
+	}
+	freeSocketBuffer(socketBuffer);
+	free(responseCode);
+
+    /*char resultCode[4];
     memset(resultCode, '\0', 4);
     read(sock, resultCode, 3);
-    printf("%d\n", atoi(resultCode));
+    printf("%d\n", atoi(resultCode));*/
 
     return; 
 }
@@ -186,6 +327,11 @@ int main(int argc, char *argv[])
     else if(strcmp(argv[1], "create") == 0)
     {
         create(argv[2]);
+    }
+
+     else if(strcmp(argv[1], "add") == 0)
+    {
+        add(argv[2], argv[3]);
     }
 
     //add step
