@@ -94,11 +94,38 @@ void writeFileToSocket(int sock, char *projName, const char *filePath) {
 	free(path);
 }
 
-// <failed: error :
+// <failed: error:
 void writeErrorToSocket(int sock, char *error) {
 	write(sock, "failed:", strlen("failed:"));
 	write(sock, error, strlen(error));
 	write(sock, ":", 1);
+}
+
+void serverDestroy(char* projName, int sock){
+
+    char* path = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
+
+    strcpy(path, SERVER_REPOS);
+    strcat(path, "/");
+    strcat(path, projName);
+    //printf("%s\n",path);
+
+    if(!fileExistsCheck(path)) 
+    {
+		writeErrorToSocket(sock, "Project does not exist.");
+	} 
+    else 
+    {
+		char *path = malloc(sizeof(char) * (strlen(projName) + 50 + strlen(SERVER_REPOS)));
+		sprintf(path, "%s/%s", SERVER_REPOS, projName);
+			
+        // ADD A REMOVE DIR FUNCTION THAT TAKES IN PATH
+            
+        free(path);
+			
+		write(sock, "destroyed:", strlen("destroyed:")); 
+	}
+		
 }
 
 void serverCreate(char* projName, int sock)
@@ -156,7 +183,7 @@ void serverCreate(char* projName, int sock)
 
         int manifestFD = open(path, O_WRONLY | O_CREAT, 00600);
         write(manifestFD, "1\n", 2);
-        write(sock, "sendfile:", strlen("filesent:"));
+        write(sock, "sendfile:", strlen("sendfile:"));
 	    write(sock, "1:", 2); 
 		writeFileToSocket(sock, projName, path);
 
@@ -248,13 +275,20 @@ int main(int argc, char *argv[])
                     cmdBuf[i] = fullCmdBuf[i];
                     i ++;
                 }
-                //printf("%s\n", cmdBuf);
+                printf("%s\n", cmdBuf);
 
                 //Step 4: Determine what command is in cmdBuf. Based on that command, do said action.
                 if(strcmp(cmdBuf, "cr") == 0)
                 {
                     char* projName = strchr(fullCmdBuf, ':') + 1;
                     serverCreate(projName, newSocket);
+                }
+
+                if(strcmp(cmdBuf, "des") == 0)
+                {
+                    char* projName = strchr(fullCmdBuf, ':') + 1;
+                    printf("%s\n",projName);
+                    serverDestroy(projName, newSocket);
                 }
             }
         }

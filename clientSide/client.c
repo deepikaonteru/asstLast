@@ -172,7 +172,7 @@ void add(char* projName, char* filePath)
 		return;
 	}
 
-    char *path = malloc( strlen("./clientRepos")* (strlen(projName) + 50)) * sizeof(char));
+    char *path = malloc((strlen("./clientRepos")* (strlen(projName) + 50)) * sizeof(char));
 
     // check if given file exists
 	sprintf(path, "%s/%s", projName, filePath);
@@ -184,11 +184,104 @@ void add(char* projName, char* filePath)
 	}
 
     // check if project directory contains manifest
-	sprintf(path, "%s/%s", project, ".Manifest");
+	sprintf(path, "%s/%s", projName, ".Manifest");
     // Make changes to manifest: add entry with new version number and hashcode
 	int manifestFD = open(path, O_RDONLY, 0777);
 
 }
+
+void destroy(char* projName)
+{
+        int sock, port, numBytes;
+        struct sockaddr_in serverAddr;
+        struct hostent* server;
+
+        //read from .configure file to obtain IP and port#
+        int fd = open("./.configure", O_RDONLY);
+            if(fd == -1) { //if file does not exist
+            printf("Error: missing .configure\n");
+            close(fd);
+            return;
+        }
+
+        fd = open("./.configure", O_RDONLY);
+        port = getPortNum(fd);
+        close(fd);
+
+        sock = socket(AF_INET, SOCK_STREAM, 0);
+        if(sock < 0)
+        {
+            printf("Error: socket failed to open.\n");
+            return;
+        }
+
+        fd = open("./.configure", O_RDONLY);
+        char hostName[256];
+        getHostName(fd, hostName);
+        server = gethostbyname(hostName);
+        if(server == NULL)
+        {
+            printf("Error: no such host.\n");
+            return;
+        }
+
+        bzero((char*)(&serverAddr), sizeof(serverAddr));
+        serverAddr.sin_family = AF_INET;
+        bcopy((char*)(server->h_addr), (char*)(&serverAddr.sin_addr.s_addr), server->h_length);
+        serverAddr.sin_port = htons(port);
+
+        if(connect(sock, (struct sockaddr*)(&serverAddr), sizeof(serverAddr)) < 0)
+        {
+            printf("Error: could not connect.\n");
+            return;
+        }
+
+        printf("Sending Project: %s to destroy\n", projName);
+
+        // des:<projectNameLength>:<projectName>
+        char* baseCmd = (char*)(malloc((strlen("des:") + strlen(projName) + 1) * sizeof(char)));
+        strcpy(baseCmd, "des:");
+        strcat(baseCmd, projName);
+        strcat(baseCmd, "\0");
+        
+        int numBytesToSend = strlen(baseCmd);
+        char numBytesBuffer[10];
+        memset(numBytesBuffer, '\0', 10 * sizeof(char));
+        sprintf(numBytesBuffer, "%d", numBytesToSend);
+
+        char* fullCmd = (char*)(malloc((strlen(numBytesBuffer) + 1 + strlen(baseCmd) + 1) * sizeof(char)));
+        strcpy(fullCmd, numBytesBuffer);
+        strcat(fullCmd, ":");
+        strcat(fullCmd, baseCmd);
+        strcat(fullCmd, "\0");
+        //printf("%s\n", fullCmd);
+
+        free(baseCmd);
+        
+        send(sock, fullCmd, strlen(fullCmd), 0);
+        // Server Sends back SocketBuffer that says destroyed: blah blah 
+        // or "failed:<fail Reason>:"
+        SocketBuffer *socketBuffer = createBuffer();
+        
+        readTillDelimiter(socketBuffer, sock, ':');
+        char *responsefrmServer = readAllBuffer(socketBuffer);
+        
+        if(strcmp(responsefrmServer, "destroyed") == 0) {
+            printf("Project %s destroyed successfully\n",projName);
+            
+        } else {
+            // failed to destroy
+            printf("Project could not be destroyed on server.\n");		
+            readTillDelimiter(socketBuffer, sock, ':');
+            char *reason = readAllBuffer(socketBuffer);
+            printf("Reason: %s\n", reason);
+            free(reason);
+        }
+        freeSocketBuffer(socketBuffer);
+        free(responsefrmServer);
+
+}
+
 void create(char* projName)
 {
     int sock, port, numBytes;
@@ -278,9 +371,9 @@ void create(char* projName)
     SocketBuffer *socketBuffer = createBuffer();
 	
 	readTillDelimiter(socketBuffer, sock, ':');
-	char *responseCode = readAllBuffer(socketBuffer);
+	char *responsefrmServer = readAllBuffer(socketBuffer);
 	
-	if(strcmp(responseCode, "sendfile") == 0) {
+	if(strcmp(responsefrmServer, "sendfile") == 0) {
 		readTillDelimiter(socketBuffer, sock, ':');
 		char *numFilesStr = readAllBuffer(socketBuffer);
 		long numFiles = atol(numFilesStr);
@@ -302,7 +395,7 @@ void create(char* projName)
 		free(reason);
 	}
 	freeSocketBuffer(socketBuffer);
-	free(responseCode);
+	free(responsefrmServer);
 
     /*char resultCode[4];
     memset(resultCode, '\0', 4);
@@ -329,7 +422,13 @@ int main(int argc, char *argv[])
         create(argv[2]);
     }
 
-     else if(strcmp(argv[1], "add") == 0)
+    //destroy step
+    else if(strcmp(argv[1], "destroy") == 0)
+    {
+        destroy(argv[2]);
+    }
+    //add step
+    else if(strcmp(argv[1], "add") == 0)
     {
         add(argv[2], argv[3]);
     }
