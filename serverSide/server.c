@@ -13,7 +13,7 @@ char DOT_VERSION[] = ".version";
 char DOT_HISTORY[] = ".history";
 
 
-long int findFileSize(char *fileName) {
+long int findFileSize(const char *fileName) {
 		
 	struct stat buffer;
 	int status = stat(fileName, &buffer);
@@ -58,40 +58,29 @@ int fileExistsCheck(char *fileName) {
 	return (stat(fileName, &buffer) == 0);
 }
 
-void writeFileToSocket(int sock, char *projName, const char *filePath) {
-	
-	// Check if project exists.
-	printf("Writing File %s in project: %s to client.\n", filePath, projName);
-	char *path = malloc(sizeof(char) * (strlen(projName) + strlen(filePath) + 50 + strlen(SERVER_REPOS)));
-	
-	// Read current version of project.
-    char *version = readCurrentVersion(projName);
-	
-	// file path
-	sprintf(path, "%s/%s/%s/%s", SERVER_REPOS, projName, version, filePath);
-	free(version);
-	
-	// Check if file exists.
-	if(!fileExistsCheck(path)) {
-		printf("File does not exist: %s\n", path);
-	} else {
-		
-		long fileSize = findFileSize(path);				
-		int fileFd = open(path, O_RDONLY, 0777);
-		
-		sprintf(path, "%d:%s%ld:", strlen(filePath), filePath, fileSize);
-		write(sock, path, strlen(path));
-		
-		// Now write file char by char on the socket	
-		char c;
-		while (read(fileFd, &c, 1) == 1) {
-			write(sock, &c, 1);
-		}
-        
-		close(fileFd);
-	}
+void writeFileToSocket(int sock, const char *filePath) {
+    //Find fileName
+    char* fileName = strrchr(filePath, '/') + 1; //./serverRepos/test/1/.Manifest
+    //Find lenOfFileName
+    int lenFileName = strlen(fileName);
+    //Find numBytesInFile
+    long fileSize = findFileSize(filePath);
 
-	free(path);
+    //Write this stuff to socket
+    char* fileInfo = (char*)(malloc(sizeof(char) * (strlen(fileName) + 5 + 25 + 3)));
+    sprintf(fileInfo, "%d:%s:%ld:", lenFileName, fileName, fileSize);
+    write(sock, fileInfo, strlen(fileInfo));
+
+    free(fileInfo);
+
+    //Get the contents of the file
+    int fd = open(filePath, O_RDONLY, 0777);
+    char* readIn = (char*)(malloc(sizeof(char) * fileSize));
+    int numBytesRead = read(fd, readIn, fileSize);
+    close(fd);
+
+    //Write contents 
+    write(sock, readIn, numBytesRead);
 }
 
 // <failed: error:
@@ -185,7 +174,7 @@ void serverCreate(char* projName, int sock)
         write(manifestFD, "1\n", 2);
         write(sock, "sendfile:", strlen("sendfile:"));
 	    write(sock, "1:", 2); 
-		writeFileToSocket(sock, projName, path);
+		writeFileToSocket(sock, path);
 
     }
 }
@@ -275,7 +264,7 @@ int main(int argc, char *argv[])
                     cmdBuf[i] = fullCmdBuf[i];
                     i ++;
                 }
-                printf("%s\n", cmdBuf);
+                //printf("%s\n", cmdBuf);
 
                 //Step 4: Determine what command is in cmdBuf. Based on that command, do said action.
                 if(strcmp(cmdBuf, "cr") == 0)

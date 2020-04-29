@@ -11,8 +11,10 @@
 #include <fcntl.h>
 #include <string.h> 
 #include "socketBufferC.h"
+char CLIENT_REPOS[] = "./clientRepos";
 
-void writeFileFromSocket(int sockToRead, char *baseDir) {
+void writeFileFromSocket(int sockToRead, char *projName) { //lenOfFileName:fileName:sizeOfFile:contentsOfFile
+                                                           //9:.Manifest:
 	SocketBuffer *socketBuffer = createBuffer();
 
 	readTillDelimiter(socketBuffer, sockToRead, ':');
@@ -20,34 +22,53 @@ void writeFileFromSocket(int sockToRead, char *baseDir) {
 	long nameLen = atol(nameLenStr);
 	
 	readNBytes(socketBuffer, sockToRead, nameLen);
-	char *filePath = readAllBuffer(socketBuffer);
+	char *fileName = readAllBuffer(socketBuffer);
 	
+    //skip colon after fileName
+    readTillDelimiter(socketBuffer, sockToRead, ':');
+
 	readTillDelimiter(socketBuffer, sockToRead, ':');
 	char *contentLenStr = readAllBuffer(socketBuffer);
 	long contentLen = atol(contentLenStr);
+    //printf("%s\n", contentLenStr);
+
+    char* contentOfFile = (char*)(malloc(sizeof(char) * contentLen));
+    int contentBytesRead = read(sockToRead, contentOfFile, contentLen);
+
+    char* pathToProject = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName))));
+	sprintf(pathToProject, "%s/%s", CLIENT_REPOS, projName);
+    int projDir = mkdir(pathToProject, 00777);
 		
-	char *fullpath = malloc(sizeof(char) * (strlen(filePath) + 15 + strlen(baseDir)));
-	sprintf(fullpath, "%s/%s", baseDir, filePath);
-	
+	//char *fullpath = malloc(sizeof(char) * (strlen(fileName) + 15 + strlen(projName)));
+    char* pathToManifest = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(fileName))));
+	sprintf(pathToManifest, "%s/%s/%s", CLIENT_REPOS, projName, fileName);
+
 	// Write data to the file now.
-	int fd = open(fullpath, O_CREAT | O_WRONLY | O_TRUNC, 0777);
+	int clientManifest = open(pathToManifest, O_CREAT | O_WRONLY | O_TRUNC, 0777);
+    write(clientManifest, contentOfFile, contentBytesRead);
+    
+    /*
 	char c;
 	long i = 0;
-	while(i++ < contentLen) {
+	while(i < contentLen) {
 		read(sockToRead, &c, 1);
 		if(c == '\0') {
 			break; // Socket disconnected.
 		}
 		write(fd, &c, 1);
+        i ++;
 	}
-	close(fd);	
+    */
+	close(clientManifest);	
 	
 	// de-allocate memory
 	freeSocketBuffer(socketBuffer);
 	free(nameLenStr);
-	free(filePath);
+	free(fileName);
 	free(contentLenStr);
-	free(fullpath);
+    free(contentOfFile);
+    free(pathToProject);
+	free(pathToManifest);
 }
 
 void configure(char* hostName, char* port)
@@ -380,8 +401,9 @@ void create(char* projName)
 		
 		// Now read N files, and save them
 		// for create, only 1 file will be sent, the .Manifest
-		while(numFiles-- > 0) {
+		while(numFiles > 0) {
 			writeFileFromSocket(sock, projName);
+            numFiles --;
 		}
 		printf("Done.\n");
 		free(numFilesStr);
