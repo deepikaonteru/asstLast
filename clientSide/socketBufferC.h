@@ -4,6 +4,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+typedef struct ManifestEntryNode {
+	char* filePath;
+	char* versionNum;
+	char* fileHash;
+	char* manifestCode;
+	struct ManifestEntryNode* next;
+} ManifestEntryNode;
 	
 typedef struct SocketNode {
 	char c;
@@ -15,6 +22,13 @@ typedef struct SocketBuffer {
 	SocketNode *head;
 	SocketNode *tail;
 } SocketBuffer;
+
+static ManifestEntryNode* insertAtHead(char* entryBuffer, int numEntries)
+{
+	ManifestEntryNode* node;
+
+	return node;
+}
 
 static void addCharToBuffer(SocketBuffer *socketBuffer, char c) {
 	SocketNode *node = malloc(sizeof(SocketNode));

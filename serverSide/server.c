@@ -34,7 +34,7 @@ char *readFileContents(char *fileName) {
 	char *result = malloc(sizeof(char) * (findFileSize(fileName) + 10));
 	
 	// Now write file char by char on the socket		
-	int fileFd = open(fileName, O_RDONLY, 0777);
+	int fileFd = open(fileName, O_RDONLY, 00777);
 	int i = 0;
 	while (read(fileFd, &result[i], 1) == 1) {
 		i++;
@@ -88,7 +88,7 @@ void writeFileToSocket(int sock, const char *filePath) {
     free(fileInfo);
 
     //Get the contents of the file
-    int fd = open(filePath, O_RDONLY, 0777);
+    int fd = open(filePath, O_RDONLY, 00777);
     char* readIn = (char*)(malloc(sizeof(char) * fileSize));
     int numBytesRead = read(fd, readIn, fileSize);
     close(fd);
@@ -114,7 +114,7 @@ void writeFToSocket(int sock, char *projName, const char *fileExtension) {
 	long fileSize = findFileSize(path);	
     
     //Get the contents of the file		
-	int fd = open(path, O_RDONLY, 0777);
+	int fd = open(path, O_RDONLY, 00777);
     char* readIn = (char*)(malloc(sizeof(char) * fileSize));
     int numBytesRead = read(fd, readIn, fileSize);
     close(fd);
@@ -285,13 +285,13 @@ void serverCreate(char* projName, int sock)
 
         //make version file
         sprintf(path, "%s/%s/%s", SERVER_REPOS, projName, DOT_VERSION);
-        int vfd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0777);	
+        int vfd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 00777);	
         write(vfd, version, strlen(version));
         close(vfd);
 
         // make history file 
         sprintf(path, "%s/%s/%s", SERVER_REPOS, projName, DOT_HISTORY);
-        int hfd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0777);
+        int hfd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 00777);
         close(hfd);
 	
         // create version directory

@@ -44,7 +44,7 @@ void writeFileFromSocket(int sockToRead, char *projName) { //lenOfFileName:fileN
 	sprintf(pathToManifest, "%s/%s/%s", CLIENT_REPOS, projName, fileName);
 
 	// Write data to the file now.
-	int clientManifest = open(pathToManifest, O_CREAT | O_WRONLY | O_TRUNC, 0777);
+	int clientManifest = open(pathToManifest, O_CREAT | O_WRONLY | O_TRUNC, 00777);
     write(clientManifest, contentOfFile, contentBytesRead);
     
     /*
@@ -166,15 +166,15 @@ int fileExistsCheck(char* fName)
 int projExistsInClient(char *projName) {
 	
 	// Check if project exists
-	if(!DirExistsCheck(projName)) {
+	if(DirExistsCheck(projName) == 0) {
 		printf("Error: The project does not exist.\n");
 		return 0;
 	}
 	
-	char *path = malloc(sizeof(char) * (strlen(projName) + 50));
+	char *path = (char*)malloc(sizeof(char) * (strlen(projName) + strlen("/") + strlen(".Manifest")));
 	
 	// check if project directory contains manifest
-	sprintf(path, "%s/%s", projName, "./Manifest");
+	sprintf(path, "%s/%s", projName, ".Manifest");
 	if(!fileExistsCheck(path)) {
 		printf("Error: Please create project first.\n");
 		free(path);
@@ -185,29 +185,129 @@ int projExistsInClient(char *projName) {
 
 // add an entry for the the file
 // to its client's .Manifest with a new version number and hashcode
-void add(char* projName, char* filePath)
+void add(char* projName, char* fileName)
 {
+    //Build path to project
+    char* pathToProject = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName))));
+    sprintf(pathToProject, "%s/%s", CLIENT_REPOS, projName);
+
     // Check if project exists
-	if(!projExistsInClient(projName)) {
+	if(projExistsInClient(pathToProject) == 0) {
 		printf("Error: Please configure the project correctly.\n");
 		return;
 	}
 
-    char *path = malloc((strlen("./clientRepos")* (strlen(projName) + 50)) * sizeof(char));
+    //Build path to file
+    char *path = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(fileName))));
+    sprintf(path, "%s/%s/%s", CLIENT_REPOS, projName, fileName);
 
     // check if given file exists
-	sprintf(path, "%s/%s", projName, filePath);
 	if(!fileExistsCheck(path)) {
 		printf("Error: File does not exist locally in project.\n");
 		printf("Cannot to find: %s\n", path);
-		free(path);
 		return;
 	}
 
     // check if project directory contains manifest
-	sprintf(path, "%s/%s", projName, ".Manifest");
+    //.Manifest:
+    /*
+    (A) (M) (R)
+    Ex:
+    1
+    <filePath>:<verNum>:<hash>:<code>
+    //./clientRepos/test10/test.txt
+    //./clientRepos/test10/yerrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr.txt
+
+    */
+    //Start to read through .Manifest
+    char* pathToManifest = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(".Manifest"))));
+    sprintf(pathToManifest, "%s/%s/%s", CLIENT_REPOS, projName, ".Manifest");
+    int manifestFD = open(pathToManifest, O_RDONLY, 00777);
+    
+    //skip first line
+    int bytesRead;
+    do
+    {
+        //Read
+        char c = 0;
+        bytesRead = read(manifestFD, &c, sizeof(char) * 1);
+
+        //Is the current character of the file a \n? If it is, break
+        if(c == '\n')
+        {
+            break;
+        }
+        
+    } while(bytesRead > 0); //next things that will be read will be the entries within .Manifest
+
+    //Initialize linked-list to read in all attributes into a ManifestEntryNode
+    /*
+    ManifestEntryNode* entryNodes;
+    tail = entryNodes;
+    entryNodes->next = insert(<entry>);
+    tail=tail->next;
+    */
+    ManifestEntryNode* entryNodes; //
+    int bufferSize = 500;
+    char* entryBuffer = (char*)(malloc(sizeof(char) * bufferSize));
+    memset(entryBuffer, '\0', 500 * sizeof(char));
+    int index = 0;
+    int numEntries = 0;
+    do {
+        //Read
+        char c = 0;
+        bytesRead = read(manifestFD, &c, sizeof(char) * 1);
+
+        //Are we at EOF?
+        if(bytesRead == 0)
+        {
+            break;
+        }
+        //Are we 
+        if(c == '\n')
+        {
+            //We need to finish this block
+            //Ensure that insertAtHead() works (create the linked list of entry nodes)
+            //Using linked list, compare the filePath of each node to the filePath specified in this function
+                //CHECKS: if match was found, then file is already in .Manifest and was modified
+                        //if match was not found, then file is not in .Manifest and needs to be added
+            //LOOK INTO MD5 (HASHING)
+            //THINK ABOUT HOW WE'RE MAKING THE LINKED LIST
+            //THINK ABOUT HOW WE'RE GOING TO WRITE BACK TO .Manifest
+
+            //entryNodes = insertAtHead(entryBuffer, numEntries); //MAKE INSERT AT HEAD
+            numEntries ++;
+            memset(entryBuffer, '\0', strlen(entryBuffer));
+            index = 0;
+        }
+        else
+        {
+            //check if need to resize
+            if(index == bufferSize)
+            {
+                char* tmpBuffer = (char*)(malloc(sizeof(char) * bufferSize));
+                memcpy(tmpBuffer, entryBuffer, bufferSize);
+                bufferSize = bufferSize * 2;
+                free(entryBuffer);
+                entryBuffer = (char*)(malloc(sizeof(char) * bufferSize));
+                memset(entryBuffer, '\0', bufferSize);
+                memcpy(entryBuffer, tmpBuffer, bufferSize/2);
+                free(tmpBuffer);
+            }
+            entryBuffer[index] = c;
+            index ++;
+        }
+        
+    } while(bytesRead > 0);
+
+    //IF file DOES NOT EXIST IN repo, THEN ADD entry
+
+
+    //IF file DOES EXIST IN repo, THEN MODIFY entry
+
+	//sprintf(path, "%s/%s", projName, ".Manifest");
     // Make changes to manifest: add entry with new version number and hashcode
-	int manifestFD = open(path, O_RDONLY, 0777);
+	//int manifestFD = open(path, O_RDONLY, 00777);
 
 }
 
