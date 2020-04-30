@@ -7,6 +7,8 @@
 #include <fcntl.h>
 #include <stdlib.h> 
 #include <string.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #include "socketBuffer.h"
 char SERVER_REPOS[] = "./serverRepos";
 char DOT_VERSION[] = ".version";
@@ -53,6 +55,18 @@ char *readCurrentVersion(char *projName) {
 	return result;
 }
 
+int DirExistsCheck(char *dirName) {
+
+    DIR* dir = opendir(dirName);
+    if (dir) {
+        /* Directory exists. */
+        return 1;
+        closedir(dir);
+    } else {
+        return 0;
+    }
+}
+
 int fileExistsCheck(char *fileName) {
 	struct stat buffer;
 	return (stat(fileName, &buffer) == 0);
@@ -83,12 +97,102 @@ void writeFileToSocket(int sock, const char *filePath) {
     write(sock, readIn, numBytesRead);
 }
 
-// <failed: error:
+
+void writeFToSocket(int sock, char *projName, const char *fileExtension) {
+	
+	// Check first if project exists.
+	printf("Writing File %s in project: %s to client.\n", fileExtension, projName);
+	char *path = malloc(sizeof(char) * (strlen(projName) + strlen(fileExtension) + 50 + strlen(SERVER_REPOS)));
+	
+	// Read current version of project.
+	char *version = readCurrentVersion(projName);
+
+	// Create file path on server.
+	sprintf(path, "%s/%s/%s/%s", SERVER_REPOS, projName, version, fileExtension);
+	free(version);
+	
+	long fileSize = findFileSize(path);	
+    
+    //Get the contents of the file		
+	int fd = open(path, O_RDONLY, 0777);
+    char* readIn = (char*)(malloc(sizeof(char) * fileSize));
+    int numBytesRead = read(fd, readIn, fileSize);
+    close(fd);
+
+	sprintf(path, "%d:%s%ld:", strlen(fileExtension), fileExtension, fileSize);
+	write(sock, path, strlen(path));
+		
+    //Write contents 
+    write(sock, readIn, numBytesRead);
+
+	close(fd);
+	free(path);
+}
+
+
+// failed: error:
 void writeErrorToSocket(int sock, char *error) {
 	write(sock, "failed:", strlen("failed:"));
 	write(sock, error, strlen(error));
 	write(sock, ":", 1);
 }
+
+int removeDir(char *path) {
+
+   DIR *d = opendir(path);
+   size_t path_len = strlen(path);
+   int r = -1;
+
+   if (d) {
+      struct dirent *p;
+
+      r = 0;
+
+      while (!r && (p=readdir(d))) {
+          int r2 = -1;
+          char *buf;
+          size_t len;
+
+          /* Skip the names "." and ".." as we don't want to recurse on them. */
+          if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, "..")) {
+             continue;
+          }
+
+          len = path_len + strlen(p->d_name) + 2; 
+          buf = malloc(len);
+
+          struct stat statbuf;
+
+          snprintf(buf, len, "%s/%s", path, p->d_name);
+
+          if (!stat(buf, &statbuf)) {
+             if (S_ISDIR(statbuf.st_mode)) {
+                r2 = removeDir(buf);
+             } else {
+                r2 = unlink(buf);
+             }
+          } else {
+			  printf("Stat error while deleting complete folder: %s\n", buf);
+			  fflush(stdout);
+		  }
+
+          free(buf);
+          r = r2;
+      }
+
+   } else {
+	  printf("Could not open dir while deleting complete folder: %s.\n", path);
+	  fflush(stdout);
+   }
+   closedir(d);
+
+   if (!r) {
+      r = rmdir(path);
+   }
+
+   return r;
+}
+
 
 void serverDestroy(char* projName, int sock){
 
@@ -108,13 +212,44 @@ void serverDestroy(char* projName, int sock){
 		char *path = malloc(sizeof(char) * (strlen(projName) + 50 + strlen(SERVER_REPOS)));
 		sprintf(path, "%s/%s", SERVER_REPOS, projName);
 			
-        // ADD A REMOVE DIR FUNCTION THAT TAKES IN PATH
+        removeDir(path);
             
         free(path);
 			
 		write(sock, "destroyed:", strlen("destroyed:")); 
 	}
 		
+}
+
+int ProjInServerRepos(char *projName) {
+
+	char *path = malloc(sizeof(char) * (strlen(SERVER_REPOS) + strlen(projName) + 5));
+	sprintf(path, "%s/%s", SERVER_REPOS, projName);
+	int result = DirExistsCheck(path);
+	free(path);
+	return result;
+
+}
+
+void serverCurrentVersion(char* projName, int sock)
+{
+    char* path = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
+    strcpy(path, SERVER_REPOS);
+    strcat(path, "/");
+    strcat(path, projName);
+		
+	if(!ProjInServerRepos(projName)) {
+		writeErrorToSocket(sock, "Project does not exist.");
+			
+	} else {
+		// send manifest file back
+		write(sock, "sendfile:", strlen("sendfile:"));
+		write(sock, "1:", 2);
+		writeFToSocket(sock, projName, ".Manifest");
+	}
+		
+	free(path);
+
 }
 
 void serverCreate(char* projName, int sock)
@@ -276,8 +411,13 @@ int main(int argc, char *argv[])
                 if(strcmp(cmdBuf, "des") == 0)
                 {
                     char* projName = strchr(fullCmdBuf, ':') + 1;
-                    printf("%s\n",projName);
                     serverDestroy(projName, newSocket);
+                }
+
+                 if(strcmp(cmdBuf, "currVer") == 0)
+                {
+                    char* projName = strchr(fullCmdBuf, ':') + 1;
+                    serverCurrentVersion(projName, newSocket);
                 }
             }
         }

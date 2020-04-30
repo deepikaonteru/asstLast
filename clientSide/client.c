@@ -303,6 +303,88 @@ void destroy(char* projName)
 
 }
 
+
+void getCurrentVersion(char* projName)
+{
+    int sock, port, numBytes;
+    struct sockaddr_in serverAddr;
+    struct hostent* server;
+
+    //read from .configure file to obtain IP and port#
+    int fd = open("./.configure", O_RDONLY);
+        if(fd == -1) { //if file does not exist
+		printf("Error: missing .configure\n");
+		close(fd);
+		return;
+	}
+
+    fd = open("./.configure", O_RDONLY);
+    port = getPortNum(fd);
+    close(fd);
+
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if(sock < 0)
+    {
+        printf("Error: socket failed to open.\n");
+        return;
+    }
+
+    fd = open("./.configure", O_RDONLY);
+    char hostName[256];
+    getHostName(fd, hostName);
+    server = gethostbyname(hostName);
+    if(server == NULL)
+    {
+        printf("Error: no such host.\n");
+        return;
+    }
+
+    bzero((char*)(&serverAddr), sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    bcopy((char*)(server->h_addr), (char*)(&serverAddr.sin_addr.s_addr), server->h_length);
+    serverAddr.sin_port = htons(port);
+
+    if(connect(sock, (struct sockaddr*)(&serverAddr), sizeof(serverAddr)) < 0)
+    {
+        printf("Error: could not connect.\n");
+        return;
+    }
+
+     printf("Trying to get current version of Project: %s.\n", projName);
+
+
+     // currentversion:<projectNameLength>:<projectName>
+	char *command = malloc(sizeof(char) * (strlen(projName) + 50));;
+	sprintf(command, "%s:%d:%s", "currVer", strlen(projName), projName);
+	write(sock, command, strlen(command));
+	free(command);
+
+    // server sends back 
+    // sendfile:<numFiles>:<ManifestNameLen>:<manifest name><numBytes>:<contents>
+	// OR "failed:<fail Reason>:"
+ 
+    SocketBuffer *socketBuffer = createBuffer();
+
+	readTillDelimiter(socketBuffer, sock, ':');
+	char *responseCode = readAllBuffer(socketBuffer);
+	
+	if(strcmp(responseCode, "sendfile") == 0) {	
+		
+        //The client should output a list of all
+        //files under the project name, along with their version number (i.e., number of updates).
+		
+	} else {
+		printf("Could not get project version from server.\n");		
+		readTillDelimiter(socketBuffer, sock, ':');
+		char *reason = readAllBuffer(socketBuffer);
+		printf("Reason: %s\n", reason);
+		free(reason);
+	}
+	
+	freeSocketBuffer(socketBuffer);
+	free(responseCode);
+
+}
 void create(char* projName)
 {
     int sock, port, numBytes;
@@ -405,7 +487,7 @@ void create(char* projName)
 			writeFileFromSocket(sock, projName);
             numFiles --;
 		}
-		printf("Done.\n");
+		printf("Project %s created.\n", projName);
 		free(numFilesStr);
 		
 	} else {
@@ -441,7 +523,21 @@ int main(int argc, char *argv[])
     //create step
     else if(strcmp(argv[1], "create") == 0)
     {
-        create(argv[2]);
+        if(argc < 3) {
+			printf("Error: Parameters missing\n");
+		} else {
+            create(argv[2]);
+		}
+    }
+
+    //currentVersion step
+    else if(strcmp(argv[1], "currentVersion") == 0)
+    {
+        if(argc < 3) {
+			printf("Error: Parameters missing\n");
+		} else {
+            getCurrentVersion(argv[2]);
+		}
     }
 
     //destroy step
