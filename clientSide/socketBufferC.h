@@ -11,6 +11,84 @@ typedef struct ManifestEntryNode {
 	char* manifestCode;
 	struct ManifestEntryNode* next;
 } ManifestEntryNode;
+
+typedef struct Manifest {
+	char *projName;
+	char *versionNum;
+	int numFiles;
+	ManifestEntryNode *head;
+	ManifestEntryNode *tail;
+} Manifest;
+
+void addEntryToManifest(Manifest *manifestList, char *filePath, char *versionNum, char *fileHash, char *manifestCode) {
+	
+	ManifestEntryNode *node = malloc(sizeof(ManifestEntryNode));
+	node->filePath = filePath;
+	node->versionNum = versionNum;
+	node->fileHash = fileHash;
+	node->manifestCode = manifestCode;
+	node->next = NULL;
+	
+	if(manifestList->tail == NULL) {
+		manifestList->tail = node;
+		manifestList->head = node;
+	} else {
+		manifestList->tail->next = node;
+		manifestList->tail = node;
+	}
+	
+	manifestList->numFiles += 1;
+}
+
+//Ex:
+    //1
+	//<numFiles>
+    //<filePath>:<verNum>:<hash>:<code>
+
+Manifest *readManifest(int fd) {
+	
+	SocketBuffer *socketBuffer = createBuffer();
+	
+	Manifest *manifestList = malloc(sizeof(Manifest));
+	manifestList->head = NULL;
+	manifestList->tail = NULL;
+	manifestList->numFiles = 0;
+
+	// first line is versionNumber
+	readTillDelimiter(socketBuffer, fd, '\n');
+	manifestList->versionNum = readAllBuffer(socketBuffer);
+
+	// next line in manifest is numFiles
+	readTillDelimiter(socketBuffer, fd, '\n');
+	char *nF = readAllBuffer(socketBuffer);
+	int numFiles = atoi(nF);
+	free(nF); // free the string given by buffer.
+
+	// now read n file entries
+	int i = 0;
+	while(i++ < numFiles) {
+		char *filePath, *versionNum, *fileHash, *manifestCode;
+		
+		readTillDelimiter(socketBuffer, fd, ':');
+		filePath = readAllBuffer(socketBuffer);
+		
+		readTillDelimiter(socketBuffer, fd, ':');
+		versionNum = readAllBuffer(socketBuffer);
+
+		readTillDelimiter(socketBuffer, fd, ':');
+		fileHash = readAllBuffer(socketBuffer);
+		
+		readTillDelimiter(socketBuffer, fd, '\n');
+		manifestCode = readAllBuffer(socketBuffer);
+
+		addEntryToManifest(manifestList, filePath, versionNum, fileHash, manifestCode);
+	}
+	
+	// free buffer
+	freeSocketBuffer(socketBuffer);
+	return manifestList;
+
+}
 	
 typedef struct SocketNode {
 	char c;
@@ -53,7 +131,7 @@ static SocketBuffer *createBuffer() {
 	return socketBuffer;
 }
 
-// this function returns a string, which user should deallocate himself.
+// this function returns a string
 static char* readAllBuffer(SocketBuffer *socketBuffer) {
 	char *result = malloc(sizeof(char) * (socketBuffer->size + 1));
 	SocketNode *node = socketBuffer->head;
@@ -65,7 +143,8 @@ static char* readAllBuffer(SocketBuffer *socketBuffer) {
 		node = node->next;
 		free(d);
 	}
-	result[i] = '\0'; // Add null terminator at last
+	// Add null terminator at last
+	result[i] = '\0'; 
 	socketBuffer->head = NULL;
 	socketBuffer->tail = NULL;
 	socketBuffer->size = 0;
@@ -78,7 +157,7 @@ static void readNBytes(SocketBuffer *socketBuffer, int sockfd, long int numBytes
 	while(i++ < numBytes) {
 		read(sockfd, &c, 1);
 		if(c == '\0') {			
-			break; // Client disconnected.
+			break; 
 		}
 		addCharToBuffer(socketBuffer, c);
 	}
@@ -91,14 +170,14 @@ static void readTillDelimiter(SocketBuffer *socketBuffer, int sockfd, char delim
 		
 		// for files,if EOF is reached, we get \0
 		if(c == '\0') {
-			break; // Client disconnected.
+			break; 
 		}
 		
 		if(c == delimiter) {
 			break;
 		}
 		
-		// Do not read the delimiter to buffer.
+		// Do not read the delimiter to buffer
 		addCharToBuffer(socketBuffer, c);
 	}
 }

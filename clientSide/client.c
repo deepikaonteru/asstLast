@@ -193,7 +193,7 @@ void add(char* projName, char* fileName)
 
     // Check if project exists
 	if(projExistsInClient(pathToProject) == 0) {
-		printf("Error: Please configure the project correctly.\n");
+		printf("Error: Project does not exist in local repo.\n");
 		return;
 	}
 
@@ -222,7 +222,29 @@ void add(char* projName, char* fileName)
     //Start to read through .Manifest
     char* pathToManifest = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(".Manifest"))));
     sprintf(pathToManifest, "%s/%s/%s", CLIENT_REPOS, projName, ".Manifest");
+    //Open Manifest
     int manifestFD = open(pathToManifest, O_RDONLY, 00777);
+    //Read manifest into Manifest struct
+
+    //Search for file you want to add in .Manifest of project which is a manifestEntryNode, if found it means file is already in project so do nothing
+
+
+    //Close Manifest
+
+
+    //Compute file hash for file you want to add and store into fileHash
+
+    //Set file version to 1 
+
+    //If(manifestEntryNode == NULL) add manifestEntryNode attributes as entry to manifestList
+
+    //Iterate through manifestList starting at head, as long as curr is not null write each attributte followed by :, increment curr
+
+
+
+
+
+
     
     //skip first line
     int bytesRead;
