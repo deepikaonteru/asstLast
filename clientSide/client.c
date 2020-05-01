@@ -231,7 +231,7 @@ char* hashFile(char* pathToFile)
 
 // add an entry for the the file
 // to its client's .Manifest with a new version number and hashcode
-void add(char* projName, char* fileName)
+void addFile(char* projName, char* fileName)
 {
     //Build path to project
     char* pathToProject = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName))));
@@ -312,8 +312,14 @@ void add(char* projName, char* fileName)
                 entry->fileHash = strdup(hashFile(pathToFile));
                 printf("File '%s' is already in .Manifest.\n", fileName);
             }
+            //if R, then need to change R to A, since we are readding the file to the project
+            else if(strcmp(entry->manifestCode, "R") == 0)
+            {
+                entry->manifestCode = "A";
+                printf("File '%s' has been added.\n", fileName);
+            }
             //if N (neutral code for when no code is necessary)
-            if(strcmp(entry->manifestCode, "N") == 0)
+            else if(strcmp(entry->manifestCode, "N") == 0)
             {
                 entry->manifestCode = "M";
                 printf("File '%s' has been added.\n", fileName);
@@ -334,117 +340,59 @@ void add(char* projName, char* fileName)
     manifestFD = open(pathToManifest, O_CREAT | O_WRONLY, 00777);
     writeToManifest(manifestFD, manifestList);
     close(manifestFD);
+}
 
-    //Find the entry with the matchingFilePath
+void removeFile(char* projName, char* fileName)
+{
+    //check if project exists on client
+    char* pathToProject = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName))));
+    sprintf(pathToProject, "%s/%s", CLIENT_REPOS, projName);
+    if(projExistsInClient(pathToProject) == 0) {
+        printf("Error: Project does not exist in local repo.\n");
+        return;
+    }
+
+    //Start to read through .Manifest
+    char* pathToManifest = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(".Manifest"))));
+    sprintf(pathToManifest, "%s/%s/%s", CLIENT_REPOS, projName, ".Manifest");
+    int manifestFD = open(pathToManifest, O_RDONLY, 00777);
+    Manifest* manifestList = readManifest(manifestFD);
+    close(manifestFD);
     
-    //If entry is NULL, that means no such entry was found, OR that it was empty
-
-    //Search for file you want to add in .Manifest of project which is a manifestEntryNode, if found it means file is already in project:
-        //If manifestCode is A, change it to M
-        //If manifestCode is M, do nothing
-    //else if it is not in struct:
-        //compute hash of that file
-        //add file as entry of Manifest with code A
-
-
-    //Close Manifest
-
-
-    //Compute file hash for file you want to add and store into fileHash
-
-    //Set file version to 1 
-
-    //If(manifestEntryNode == NULL) add manifestEntryNode attributes as entry to manifestList
-
-    //Iterate through manifestList starting at head, as long as curr is not null write each attributte followed by :, increment curr
-
-    //skip first line
-    /*
-    int bytesRead;
-    do
+    //check if .Manifest is empty, if it is, nothing to remove
+    if(manifestList->numFiles == 0)
     {
-        //Read
-        char c = 0;
-        bytesRead = read(manifestFD, &c, sizeof(char) * 1);
-
-        //Is the current character of the file a \n? If it is, break
-        if(c == '\n')
+        printf("Error: .Manifest is empty.\n");
+        return;
+    }
+    else
+    {
+        //Find the entry for the file
+        char *pathToFile = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(fileName))));
+        sprintf(pathToFile, "%s/%s/%s", CLIENT_REPOS, projName, fileName);
+        ManifestEntryNode* entry = findNodeByFilePath(manifestList, pathToFile);
+        if(entry == NULL) //if there's no such match, then there's nothing to remove
         {
-            break;
+            printf("Error: file is not in .Manifest.\n");
+            return;
         }
-        
-    } while(bytesRead > 0); //next things that will be read will be the entries within .Manifest*/
-
-    //Initialize linked-list to read in all attributes into a ManifestEntryNode
-    /*
-    ManifestEntryNode* entryNodes;
-    tail = entryNodes;
-    entryNodes->next = insert(<entry>);
-    tail=tail->next;
-    */
-   /*
-    ManifestEntryNode* entryNodes; //
-    int bufferSize = 500;
-    char* entryBuffer = (char*)(malloc(sizeof(char) * bufferSize));
-    memset(entryBuffer, '\0', 500 * sizeof(char));
-    int index = 0;
-    int numEntries = 0;
-    do {
-        //Read
-        char c = 0;
-        bytesRead = read(manifestFD, &c, sizeof(char) * 1);
-
-        //Are we at EOF?
-        if(bytesRead == 0)
+        else if(strcmp(entry->manifestCode, "R") == 0)
         {
-            break;
-        }
-        //Are we 
-        if(c == '\n')
-        {
-            //We need to finish this block
-            //Ensure that insertAtHead() works (create the linked list of entry nodes)
-            //Using linked list, compare the filePath of each node to the filePath specified in this function
-                //CHECKS: if match was found, then file is already in .Manifest and was modified
-                        //if match was not found, then file is not in .Manifest and needs to be added
-            //LOOK INTO MD5 (HASHING)
-            //THINK ABOUT HOW WE'RE MAKING THE LINKED LIST
-            //THINK ABOUT HOW WE'RE GOING TO WRITE BACK TO .Manifest
-
-            //entryNodes = insertAtHead(entryBuffer, numEntries); //MAKE INSERT AT HEAD
-            numEntries ++;
-            memset(entryBuffer, '\0', strlen(entryBuffer));
-            index = 0;
+            printf("Error: File '%s' has already been removed.\n");
+            return;
         }
         else
         {
-            //check if need to resize
-            if(index == bufferSize)
-            {
-                char* tmpBuffer = (char*)(malloc(sizeof(char) * bufferSize));
-                memcpy(tmpBuffer, entryBuffer, bufferSize);
-                bufferSize = bufferSize * 2;
-                free(entryBuffer);
-                entryBuffer = (char*)(malloc(sizeof(char) * bufferSize));
-                memset(entryBuffer, '\0', bufferSize);
-                memcpy(entryBuffer, tmpBuffer, bufferSize/2);
-                free(tmpBuffer);
-            }
-            entryBuffer[index] = c;
-            index ++;
+            entry->manifestCode = "R";
+            printf("File '%s' has been removed.\n", fileName);
         }
-        
-    } while(bytesRead > 0);*/
+    }
 
-    //IF file DOES NOT EXIST IN repo, THEN ADD entry
-
-
-    //IF file DOES EXIST IN repo, THEN MODIFY entry
-
-	//sprintf(path, "%s/%s", projName, ".Manifest");
-    // Make changes to manifest: add entry with new version number and hashcode
-	//int manifestFD = open(path, O_RDONLY, 00777);
-
+    //overwrite .Manifest to reflect changes made to an entry
+    remove(pathToManifest);
+    manifestFD = open(pathToManifest, O_CREAT | O_WRONLY, 00777);
+    writeToManifest(manifestFD, manifestList);
+    close(manifestFD);
 }
 
 void destroy(char* projName)
@@ -784,7 +732,11 @@ int main(int argc, char *argv[])
     //add step
     else if(strcmp(argv[1], "add") == 0)
     {
-        add(argv[2], argv[3]);
+        addFile(argv[2], argv[3]);
+    }
+    else if(strcmp(argv[1], "remove") == 0)
+    {
+        removeFile(argv[2], argv[3]);
     }
 
     //add step
