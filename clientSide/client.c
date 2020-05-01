@@ -7,7 +7,7 @@
 #include <unistd.h> 
 #include <stdlib.h>
 #include <dirent.h>
-#include <openssl/sha.h>
+#include <openssl/md5.h>
 #include <fcntl.h>
 #include <string.h> 
 #include "socketBufferC.h"
@@ -183,6 +183,52 @@ int projExistsInClient(char *projName) {
 	return 1;
 }
 
+long int findFileSize(char* filePath)
+{
+    struct stat buffer;
+    int status = stat(filePath, &buffer);
+    if(status == 0)
+    {
+        return buffer.st_size;
+    }
+    return -1;
+}
+
+char* hashFile(char* pathToFile)
+{
+    long sizeOfFile = findFileSize(pathToFile);
+    //printf("%ld\n", sizeOfFile);
+
+    //initialize a buffer, set it equal to file content
+    char* contentBuffer = (char*)(malloc(sizeof(char) * sizeOfFile));
+    memset(contentBuffer, '\0', sizeOfFile);
+    int fileFD = open(pathToFile, O_RDONLY, 00777);
+    int bytesReadFromFile = read(fileFD, contentBuffer, sizeof(char) * sizeOfFile);
+    close(fileFD);
+    //printf("%s\n", contentBuffer);
+
+    //hash this buffer
+    unsigned char hash[MD5_DIGEST_LENGTH];
+    MD5(contentBuffer, strlen(contentBuffer), hash);
+    /*
+    int i;
+    for(i = 0; i < MD5_DIGEST_LENGTH; i++)
+        printf("%02x", hash[i]);
+    printf("\n");*/
+    free(contentBuffer);
+
+    //convert hash into hex format to save to manifestEntryNode
+    char* strHash = (char*)(malloc(sizeof(char) * (MD5_DIGEST_LENGTH * 2 + 1)));
+    int i;
+    for(i = 0; i < MD5_DIGEST_LENGTH; i ++)
+    {
+        sprintf(strHash + 2 * i, "%02x", hash[i]);
+    }
+    //printf("%s\n", strHash);
+
+    return strHash;
+}
+
 // add an entry for the the file
 // to its client's .Manifest with a new version number and hashcode
 void add(char* projName, char* fileName)
@@ -198,13 +244,13 @@ void add(char* projName, char* fileName)
 	}
 
     //Build path to file
-    char *path = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(fileName))));
-    sprintf(path, "%s/%s/%s", CLIENT_REPOS, projName, fileName);
+    char *pathToFile = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(fileName))));
+    sprintf(pathToFile, "%s/%s/%s", CLIENT_REPOS, projName, fileName);
 
     // check if given file exists
-	if(!fileExistsCheck(path)) {
+	if(!fileExistsCheck(pathToFile)) {
 		printf("Error: File does not exist locally in project.\n");
-		printf("Cannot to find: %s\n", path);
+		printf("Cannot to find: %s\n", pathToFile);
 		return;
 	}
 
@@ -224,9 +270,81 @@ void add(char* projName, char* fileName)
     sprintf(pathToManifest, "%s/%s/%s", CLIENT_REPOS, projName, ".Manifest");
     //Open Manifest
     int manifestFD = open(pathToManifest, O_RDONLY, 00777);
-    //Read manifest into Manifest struct
 
-    //Search for file you want to add in .Manifest of project which is a manifestEntryNode, if found it means file is already in project so do nothing
+    //Read manifest into Manifest struct
+    Manifest* manifestList = readManifest(manifestFD);
+    close(manifestFD);
+    //printf("Version: %d\nNumber of Files: %d\n", manifestList->versionNum, manifestList->numFiles);
+    
+    char* hash;
+    //Check numFiles of manifestList, if 0, that means there are no entries (or no files in the project)
+    if(manifestList->numFiles == 0)
+    {
+        //printf("no files\n");
+        //hash file, ensure you have all attributes necessary, add entry into manifestList
+        hash = strdup(hashFile(pathToFile));
+    
+        addEntryToManifest(manifestList, pathToFile, "1", hash, "A");
+        printf("File '%s' has been added.\n", fileName);
+    }
+    else
+    {
+        //Find the entry with the matching file path
+        ManifestEntryNode* entry = findNodeByFilePath(manifestList, pathToFile);
+
+        //If entry is NULL, that means no entry was found
+        if(entry == NULL)
+        {
+            //hash file, ensure you have all attributes necessary, add entry into manifestList
+            hash = strdup(hashFile(pathToFile));
+
+            //add to manifestList
+            addEntryToManifest(manifestList, pathToFile, "1", hash, "A");
+            printf("File '%s' has been added.\n", fileName);
+
+        }
+        else
+        {
+            //check entry's manifestCode:
+            //if A, then need to change A to M, then rewrite
+            if(strcmp(entry->manifestCode, "A") == 0)
+            {
+                entry->fileHash = strdup(hashFile(pathToFile));
+                printf("File '%s' is already in .Manifest.\n", fileName);
+            }
+            //if N (neutral code for when no code is necessary)
+            if(strcmp(entry->manifestCode, "N") == 0)
+            {
+                entry->manifestCode = "M";
+                printf("File '%s' has been added.\n", fileName);
+            }
+            //if M, no need to make any changes
+            else if(strcmp(entry->manifestCode, "M") == 0)
+            {
+                //nothing should happen, should just return out of the method
+                //display that file is added
+                printf("File '%s' has been added.\n", fileName);
+                return;
+            }
+        }
+    }
+
+    //overwrite .Manifest to reflect changes made to an entry
+    remove(pathToManifest);
+    manifestFD = open(pathToManifest, O_CREAT | O_WRONLY, 00777);
+    writeToManifest(manifestFD, manifestList);
+    close(manifestFD);
+
+    //Find the entry with the matchingFilePath
+    
+    //If entry is NULL, that means no such entry was found, OR that it was empty
+
+    //Search for file you want to add in .Manifest of project which is a manifestEntryNode, if found it means file is already in project:
+        //If manifestCode is A, change it to M
+        //If manifestCode is M, do nothing
+    //else if it is not in struct:
+        //compute hash of that file
+        //add file as entry of Manifest with code A
 
 
     //Close Manifest
@@ -240,13 +358,8 @@ void add(char* projName, char* fileName)
 
     //Iterate through manifestList starting at head, as long as curr is not null write each attributte followed by :, increment curr
 
-
-
-
-
-
-    
     //skip first line
+    /*
     int bytesRead;
     do
     {
@@ -260,7 +373,7 @@ void add(char* projName, char* fileName)
             break;
         }
         
-    } while(bytesRead > 0); //next things that will be read will be the entries within .Manifest
+    } while(bytesRead > 0); //next things that will be read will be the entries within .Manifest*/
 
     //Initialize linked-list to read in all attributes into a ManifestEntryNode
     /*
@@ -269,6 +382,7 @@ void add(char* projName, char* fileName)
     entryNodes->next = insert(<entry>);
     tail=tail->next;
     */
+   /*
     ManifestEntryNode* entryNodes; //
     int bufferSize = 500;
     char* entryBuffer = (char*)(malloc(sizeof(char) * bufferSize));
@@ -320,7 +434,7 @@ void add(char* projName, char* fileName)
             index ++;
         }
         
-    } while(bytesRead > 0);
+    } while(bytesRead > 0);*/
 
     //IF file DOES NOT EXIST IN repo, THEN ADD entry
 

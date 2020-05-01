@@ -306,7 +306,7 @@ void serverCreate(char* projName, int sock)
         sprintf(path, "%s/%s/%s/%s", SERVER_REPOS, projName, version, ".Manifest");
 
         int manifestFD = open(path, O_WRONLY | O_CREAT, 00600);
-        write(manifestFD, "1\n", 2);
+        write(manifestFD, "1\n0\n", 4);
         write(sock, "sendfile:", strlen("sendfile:"));
 	    write(sock, "1:", 2); 
 		writeFileToSocket(sock, path);
