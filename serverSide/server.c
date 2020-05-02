@@ -238,6 +238,28 @@ int ProjInServerRepos(char *projName) {
 
 }
 
+void serverCommit(char* projName, int sock)
+{
+    char* path = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
+    strcpy(path, SERVER_REPOS);
+    strcat(path, "/");
+    strcat(path, projName);
+		
+	if(!ProjInServerRepos(projName)) {
+		writeErrorToSocket(sock, "Project does not exist.");
+			
+	} else {
+		// send manifest file back
+		write(sock, "sendfile:", strlen("sendfile:"));
+		write(sock, "1:", 2);
+		writeFToSocket(sock, projName, ".Manifest");
+	}
+		
+	free(path);
+
+    
+}
+
 void serverCurrentVersion(char* projName, int sock)
 {
     char* path = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
@@ -425,6 +447,12 @@ int main(int argc, char *argv[])
                 {
                     char* projName = strchr(fullCmdBuf, ':') + 1;
                     serverCurrentVersion(projName, newSocket);
+                }
+
+                if(strcmp(cmdBuf, "com") == 0)
+                {
+                    char* projName = strchr(fullCmdBuf, ':') + 1;
+                    serverCommit(projName, newSocket);
                 }
             }
         }

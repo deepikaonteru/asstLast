@@ -12,6 +12,8 @@
 #include <string.h> 
 #include "socketBufferC.h"
 char CLIENT_REPOS[] = "./clientRepos";
+char DOT_UPDATE[] = ".Update";
+char DOT_MANIFEST[] = ".Update";
 
 void writeFileFromSocket(int sockToRead, char *projName) { //lenOfFileName:fileName:sizeOfFile:contentsOfFile
                                                            //9:.Manifest:
@@ -69,6 +71,25 @@ void writeFileFromSocket(int sockToRead, char *projName) { //lenOfFileName:fileN
     free(contentOfFile);
     free(pathToProject);
 	free(pathToManifest);
+}
+
+Manifest* readManifestInClient(char *projName) {
+	char *path = malloc(sizeof(char) * (strlen(projName) + 50));
+
+    char* pathToManifest = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(DOT_MANIFEST) )));
+    sprintf(pathToManifest, "%s/%s/%s", CLIENT_REPOS, projName, DOT_MANIFEST);
+	
+	if(!fileExistsCheck(pathToManifest)) {
+		free(pathToManifest);
+		return NULL;
+	}
+	
+	int manifestFd = open(pathToManifest, O_RDONLY, 0777);
+	Manifest *manifest = readManifest(manifestFd);
+	close(manifestFd);
+	
+	free(pathToManifest);
+	return manifest;
 }
 
 void configure(char* hostName, char* port)
@@ -229,6 +250,143 @@ char* hashFile(char* pathToFile)
     return strHash;
 }
 
+
+
+void commit(char* projName)
+{
+    //check if project exists on client
+    char* pathToProject = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName))));
+    sprintf(pathToProject, "%s/%s", CLIENT_REPOS, projName);
+    if(projExistsInClient(pathToProject) == 0) {
+        printf("Error: Project does not exist in local repo.\n");
+        return;
+    }
+
+    char* pathToUpdate = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(DOT_UPDATE))));
+
+    // check if update file is there and is not empty
+	sprintf(pathToUpdate, "%s/%s/%s", CLIENT_REPOS, projName, DOT_UPDATE);
+    //printf("%s\n",pathToUpdate);
+	if(fileExistsCheck(pathToUpdate) && findFileSize(pathToUpdate) != 0) {
+		printf("Error: Client has a .Update file that isn't empty.\n");
+		free(pathToUpdate);
+		return;
+	}
+
+    int sock, port, numBytes;
+    struct sockaddr_in serverAddr;
+    struct hostent* server;
+
+    //read from .configure file to obtain IP and port#
+    int fd = open("./.configure", O_RDONLY);
+    if(fd == -1) { //if file does not exist
+        printf("Error: missing .configure\n");
+        close(fd);
+        return;
+	}
+
+    fd = open("./.configure", O_RDONLY);
+    port = getPortNum(fd);
+    close(fd);
+
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if(sock < 0)
+    {
+        printf("Error: socket failed to open.\n");
+        return;
+    }
+
+    fd = open("./.configure", O_RDONLY);
+    char hostName[256];
+    getHostName(fd, hostName);
+    server = gethostbyname(hostName);
+    if(server == NULL)
+    {
+        printf("Error: no such host.\n");
+        return;
+    }
+
+    bzero((char*)(&serverAddr), sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    bcopy((char*)(server->h_addr), (char*)(&serverAddr.sin_addr.s_addr), server->h_length);
+    serverAddr.sin_port = htons(port);
+
+    if(connect(sock, (struct sockaddr*)(&serverAddr), sizeof(serverAddr)) < 0)
+    {
+        printf("Error: could not connect.\n");
+        return;
+    }
+
+    printf("Getting .Manifest of Project: %s.\n", projName);
+
+    // Step 1: Fetch server's .Manifest for specified project
+    // Send socket message
+    // <lengthAfterFirstColon>com:<projectName>
+
+    char* baseCmd = (char*)(malloc((strlen("com:") + strlen(projName) + 1) * sizeof(char)));
+    strcpy(baseCmd, "com:");
+    strcat(baseCmd, projName);
+    strcat(baseCmd, "\0");
+
+    int numBytesToSend = strlen(baseCmd);
+    char numBytesBuffer[10];
+    memset(numBytesBuffer, '\0', 10 * sizeof(char));
+    sprintf(numBytesBuffer, "%d", numBytesToSend);
+
+    char* fullCmd = (char*)(malloc((strlen(numBytesBuffer) + 1 + strlen(baseCmd) + 1) * sizeof(char)));
+    strcpy(fullCmd, numBytesBuffer);
+    strcat(fullCmd, ":");
+    strcat(fullCmd, baseCmd);
+    strcat(fullCmd, "\0");
+    //printf("%s\n", fullCmd);
+
+    free(baseCmd);
+
+    send(sock, fullCmd, strlen(fullCmd), 0);
+
+    // server sends back 
+    // sendfile:<numFiles>:<ManifestNameLen>:<manifest name>:<numBytesOfContent>:<contents>
+	// OR "failed:<fail Reason>:"
+ 
+    SocketBuffer *socketBuffer = createBuffer();
+
+	readTillDelimiter(socketBuffer, sock, ':');
+	char *responseCode = readAllBuffer(socketBuffer);
+	
+	if(strcmp(responseCode, "sendfile") == 0) {	
+		
+        //The client should output a list of all
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* numFiles = readAllBuffer(socketBuffer);
+        int nF = atoi(numFiles);
+
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* lenExt = readAllBuffer(socketBuffer);
+        long lExt = atol(lenExt);
+
+        readNBytes(socketBuffer, sock, lExt + 1);
+        char* ext = readAllBuffer(socketBuffer);
+        
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* numBytesContent = readAllBuffer(socketBuffer);
+        long nBytesContent = atol(numBytesContent);
+        
+        Manifest *serverManifestList = readManifest(sock);
+
+        Manifest* clientManifestList = readManifestInClient(projName);
+
+        //Step 2: Check if version numbers of client and server .Manifest files match
+        //if they do, create a .Commit file and read through client's .Manifest
+            //read each entry that has a code that is NOT 'N'
+            //. Look for those codes that signify added files, changed files and 
+            //removed files rather than scanning through the entire entry). 
+
+        ManifestEntryNode* curr = serverManifestList->head;
+    }
+
+
+
+}
 // add an entry for the the file
 // to its client's .Manifest with a new version number and hashcode
 void addFile(char* projName, char* fileName)
@@ -794,6 +952,8 @@ int main(int argc, char *argv[])
     }
     else if(strcmp(argv[1], "commit") == 0)
     {
+        commit(argv[2]);
+
         //COMMIT
         //Step 1: Fetch server's .Manifest for specified project
         //Step 2: Check if version numbers of client and server .Manifest files match
