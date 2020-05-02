@@ -97,6 +97,7 @@ void writeFileToSocket(int sock, const char *filePath) {
 
     //Write contents 
     write(sock, readIn, numBytesRead);
+    free(readIn);
 }
 
 
@@ -210,6 +211,7 @@ void serverDestroy(char* projName, int sock){
     if(!ProjInServerRepos(projName)) 
     {
 		writeErrorToSocket(sock, "Project does not exist.");
+        free(path);
 	} 
     else 
     {
@@ -217,8 +219,8 @@ void serverDestroy(char* projName, int sock){
 		sprintf(path, "%s/%s", SERVER_REPOS, projName);
 			
         //removeDir(path);
-        char* sysCmd = (char*)(malloc(sizeof(char) * (strlen("rm -r ") + strlen(path))));
-        sprintf(sysCmd, "rm -r %s", path);
+        char* sysCmd = (char*)(malloc(sizeof(char) * (strlen("rm -rf ") + strlen(path))));
+        sprintf(sysCmd, "rm -rf %s", path);
         system(sysCmd);
             
         free(path);
@@ -230,7 +232,7 @@ void serverDestroy(char* projName, int sock){
 
 int ProjInServerRepos(char *projName) {
 
-	char *path = malloc(sizeof(char) * (strlen(SERVER_REPOS) + strlen(projName) + 5));
+	char* path = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
 	sprintf(path, "%s/%s", SERVER_REPOS, projName);
 	int result = DirExistsCheck(path);
 	free(path);
@@ -256,7 +258,8 @@ void serverCommit(char* projName, int sock)
 	}
 		
 	free(path);
-
+    
+    //Wait for .Commit file to be sent, OR failure message
     
 }
 
@@ -302,6 +305,7 @@ void serverCreate(char* projName, int sock)
             //char* errCode = "400";
             //send(sock, errCode, strlen(errCode), 0);
             writeErrorToSocket(sock, "Project Already exists.");
+            free(path);
         }  
     }
     else if(mkdirResult == 0)
@@ -336,10 +340,11 @@ void serverCreate(char* projName, int sock)
 
         int manifestFD = open(path, O_WRONLY | O_CREAT, 00600);
         write(manifestFD, "1\n0\n", 4);
+        close(manifestFD);
         write(sock, "sendfile:", strlen("sendfile:"));
 	    write(sock, "1:", 2); 
 		writeFileToSocket(sock, path);
-
+        free(path);
     }
 }
 

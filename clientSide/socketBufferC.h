@@ -260,4 +260,31 @@ static void writeToManifest(int manifestFD, Manifest* manifestList)
 
 }
 
+static void freeManifestEntryNodes(Manifest* manifestList)
+{
+	ManifestEntryNode* tmp;
+	while(manifestList->head != NULL)
+	{
+		tmp = manifestList->head;
+		manifestList->head = manifestList->head->next;
+		if(tmp->filePath != NULL)
+		{
+			free(tmp->filePath);
+		}
+		if(tmp->fileHash != NULL)
+		{
+			free(tmp->fileHash);
+		}
+		if(tmp->versionNum != NULL)
+		{
+			free(tmp->versionNum);
+		}
+		if(tmp->manifestCode != NULL)
+		{
+			free(tmp->manifestCode);
+		}
+		free(tmp);
+	}
+}
+
 #endif

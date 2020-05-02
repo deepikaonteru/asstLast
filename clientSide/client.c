@@ -13,7 +13,9 @@
 #include "socketBufferC.h"
 char CLIENT_REPOS[] = "./clientRepos";
 char DOT_UPDATE[] = ".Update";
-char DOT_MANIFEST[] = ".Update";
+char DOT_MANIFEST[] = ".Manifest";
+char DOT_CONFLICT[] = ".Conflict";
+char DOT_COMMIT[] = ".Commit";
 
 void writeFileFromSocket(int sockToRead, char *projName) { //lenOfFileName:fileName:sizeOfFile:contentsOfFile
                                                            //9:.Manifest:
@@ -259,19 +261,35 @@ void commit(char* projName)
     sprintf(pathToProject, "%s/%s", CLIENT_REPOS, projName);
     if(projExistsInClient(pathToProject) == 0) {
         printf("Error: Project does not exist in local repo.\n");
+        free(pathToProject);
         return;
     }
 
-    char* pathToUpdate = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(DOT_UPDATE))));
+    //char* pathToUpdate = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(DOT_UPDATE))));
+    char* pathToUpdate = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + 1 + strlen(projName) + 1 + strlen(DOT_UPDATE))));
 
     // check if update file is there and is not empty
 	sprintf(pathToUpdate, "%s/%s/%s", CLIENT_REPOS, projName, DOT_UPDATE);
-    //printf("%s\n",pathToUpdate);
+    //printf("%s\n\n",pathToUpdate);
 	if(fileExistsCheck(pathToUpdate) && findFileSize(pathToUpdate) != 0) {
 		printf("Error: Client has a .Update file that isn't empty.\n");
 		free(pathToUpdate);
+        free(pathToProject);
 		return;
 	}
+    free(pathToUpdate);
+
+    char* pathToConflict = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + 1 + strlen(projName) + 1 + strlen(DOT_CONFLICT))));
+    //check if there is a .Conflict file
+    sprintf(pathToConflict, "%s/%s/%s", CLIENT_REPOS, projName, DOT_CONFLICT);
+    if(fileExistsCheck(pathToConflict))
+    {
+        printf("Error: Client has a .Conflict file.\n");
+        free(pathToProject);
+        free(pathToConflict);
+        return;
+    }
+    free(pathToConflict);
 
     int sock, port, numBytes;
     struct sockaddr_in serverAddr;
@@ -281,6 +299,7 @@ void commit(char* projName)
     int fd = open("./.configure", O_RDONLY);
     if(fd == -1) { //if file does not exist
         printf("Error: missing .configure\n");
+        free(pathToProject);
         close(fd);
         return;
 	}
@@ -293,6 +312,7 @@ void commit(char* projName)
     if(sock < 0)
     {
         printf("Error: socket failed to open.\n");
+        free(pathToProject);
         return;
     }
 
@@ -303,6 +323,7 @@ void commit(char* projName)
     if(server == NULL)
     {
         printf("Error: no such host.\n");
+        free(pathToProject);
         return;
     }
 
@@ -314,6 +335,7 @@ void commit(char* projName)
     if(connect(sock, (struct sockaddr*)(&serverAddr), sizeof(serverAddr)) < 0)
     {
         printf("Error: could not connect.\n");
+        free(pathToProject);
         return;
     }
 
@@ -321,28 +343,32 @@ void commit(char* projName)
 
     // Step 1: Fetch server's .Manifest for specified project
     // Send socket message
-    // <lengthAfterFirstColon>com:<projectName>
+    // <lengthAfterFirstColon>:com:<projectName>
 
     char* baseCmd = (char*)(malloc((strlen("com:") + strlen(projName) + 1) * sizeof(char)));
     strcpy(baseCmd, "com:");
     strcat(baseCmd, projName);
     strcat(baseCmd, "\0");
+    //printf("%s\n\n", baseCmd);
 
     int numBytesToSend = strlen(baseCmd);
     char numBytesBuffer[10];
     memset(numBytesBuffer, '\0', 10 * sizeof(char));
     sprintf(numBytesBuffer, "%d", numBytesToSend);
+    //printf("%s\n\n", numBytesBuffer);
 
     char* fullCmd = (char*)(malloc((strlen(numBytesBuffer) + 1 + strlen(baseCmd) + 1) * sizeof(char)));
     strcpy(fullCmd, numBytesBuffer);
     strcat(fullCmd, ":");
     strcat(fullCmd, baseCmd);
     strcat(fullCmd, "\0");
-    //printf("%s\n", fullCmd);
+    //printf("%s\n\n", fullCmd);
 
     free(baseCmd);
 
     send(sock, fullCmd, strlen(fullCmd), 0);
+
+    free(fullCmd);
 
     // server sends back 
     // sendfile:<numFiles>:<ManifestNameLen>:<manifest name>:<numBytesOfContent>:<contents>
@@ -371,8 +397,7 @@ void commit(char* projName)
         char* numBytesContent = readAllBuffer(socketBuffer);
         long nBytesContent = atol(numBytesContent);
         
-        Manifest *serverManifestList = readManifest(sock);
-
+        Manifest* serverManifestList = readManifest(sock);
         Manifest* clientManifestList = readManifestInClient(projName);
 
         //Step 2: Check if version numbers of client and server .Manifest files match
@@ -380,12 +405,161 @@ void commit(char* projName)
             //read each entry that has a code that is NOT 'N'
             //. Look for those codes that signify added files, changed files and 
             //removed files rather than scanning through the entire entry). 
+        //printf("%d\n", serverManifestList->versionNum);
+        //printf("%d\n", clientManifestList->versionNum);
+        if(serverManifestList->versionNum != clientManifestList->versionNum) 
+        {
+            printf("Error: .Manifest version numbers do not match, call update on project first.\n");
+            free(responseCode);
+            freeSocketBuffer(socketBuffer);
+            freeManifestEntryNodes(serverManifestList);
+            freeManifestEntryNodes(clientManifestList);
+            free(serverManifestList);
+            free(clientManifestList);
+            free(pathToProject);
 
-        ManifestEntryNode* curr = serverManifestList->head;
+            //Notify server that we failed
+            
+            return;
+        }
+        //if they do, create a .Commit file and read through client's .Manifest
+            //read each entry that has a code that is NOT 'N'
+            //. Look for those codes that signify added files, changed files and 
+            //removed files rather than scanning through the entire entry. 
+        else
+        {
+            //loop through each entry, if code for entry is not N, search through serverManifestList
+            //we use findNodeByFilePath to find the same entry, CHECK HASH AND VERSION NUM of server
+            //if server's file's version number is greater, then FAIL
+            //if A, write entry into commit EXACTLY AS IS
+            //if R, write entry into commit (with D instead of R), everything else EXACTLY AS IS
+            //if M, 
+                //When writing to .Commit for modified code, write with an incremented file version number and live hash code
+                //If server .Manifest contains different hash AND greater version number for a file, FAIL
+            //build path to .Commit, open .Commit
+            char* pathToCommit = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + 1 + strlen(projName) + 1 +strlen(DOT_COMMIT))));
+            sprintf(pathToCommit, "%s/%s/%s", CLIENT_REPOS, projName, DOT_COMMIT);
+            remove(pathToCommit);
+            int commitFD = open(pathToCommit, O_CREAT | O_WRONLY, 00777);
+
+            //read through each ManifestEntryNode in clientManifestList
+            ManifestEntryNode* curr = clientManifestList->head;
+            char* liveHash;
+            while(curr != NULL)
+            {
+                //if this curr has code N, move on to next node
+                if(strcmp(curr->manifestCode, "N") == 0)
+                {
+                    curr = curr->next;
+                    continue;
+                }
+                //if this curr has code A, write the entry into .Commit as is (new code that server has never seen before)
+                //Write the following: A:<filePath>:<versionNum>:<fileHash>
+                //Print the following: A <filePath>
+                else if(strcmp(curr->manifestCode, "A") == 0)
+                {
+                    write(commitFD, "A:", 2);
+
+                    write(commitFD, curr->filePath, strlen(curr->filePath));
+                    write(commitFD, ":", 1);
+
+                    write(commitFD, curr->versionNum, strlen(curr->versionNum));
+                    write(commitFD, ":", 1);
+
+                    write(commitFD, curr->fileHash, strlen(curr->fileHash));
+                    
+                    printf("A %s\n", curr->filePath);
+                }
+                //if this curr has code R, write the entry into .Commit as is (code that needs to be deleted)
+                else if(strcmp(curr->manifestCode, "R") == 0)
+                {
+                    write(commitFD, "D:", 2);
+
+                    write(commitFD, curr->filePath, strlen(curr->filePath));
+                    write(commitFD, ":", 1);
+
+                    write(commitFD, curr->versionNum, strlen(curr->versionNum));
+                    write(commitFD, ":", 1);
+
+                    write(commitFD, curr->fileHash, strlen(curr->fileHash));
+                    
+                    printf("D %s\n", curr->filePath);
+                }
+                //if this curr has code M, write the entry into .Commit with incremented file version and new hash
+                //Write the following: M:<filePath>:<versionNum++>:<liveFileHash>
+                //Print the following: M <filePath>
+                else if(strcmp(curr->manifestCode, "M") == 0)
+                {
+                    //get live hash
+                    char* pathToFile = curr->filePath;
+                    liveHash = strdup(hashFile(pathToFile));
+
+                    //now check the hash and versionNumber against that of the server's entryNode for the same file
+                        //if live hash is the same as client hash in .Manifest, client didn't make real modifications, so ignore it
+                        //if live hash is different, check the version number to make sure there is no file de-sync (if file's version number of server is greater, FAIL)
+                    ManifestEntryNode* fileInServer = findNodeByFilePath(serverManifestList, curr->filePath);
+                    //check if live hash is the same as client hash, if it is, increment curr and continue (treat as N)
+                    if(strcmp(liveHash, curr->fileHash) == 0)
+                    {
+                        //not real modification, treat this as code N
+                        curr = curr->next;
+                        continue;
+                    }
+                    //otherwise, live hash is for sure different from hash in client's .Manifest for that file
+                    else
+                    {
+                        //increment version number
+                        int verNum = atoi(curr->versionNum);
+                        verNum ++;
+                        char vN[10];
+                        memset(vN, '\0', 10 * sizeof(char));
+                        sprintf(vN, "%d", verNum);
+                        curr->versionNum = vN;
+
+                        //check the version number of file in server against version number of file in client
+                        if(atoi(fileInServer->versionNum) > atoi(curr->versionNum))
+                        {
+                            printf("Error: Client must synch with the repository before making changes.\n");
+                            close(commitFD);
+                            remove(pathToCommit);
+                            free(pathToCommit);
+                            free(pathToProject);
+                            freeManifestEntryNodes(serverManifestList);
+                            free(serverManifestList);
+                            //freeManifestEntryNodes(clientManifestList);
+                            free(clientManifestList);
+                            return;
+                        }
+                        //otherwise, there is no file de-sync, so write it to .Commit as a modify code
+                        //Write the following: M:<filePath>:<versionNum>:<fileHash>
+                        //Print the following: M <filePath>
+                        else
+                        {
+                            write(commitFD, "M:", 2);
+
+                            write(commitFD, curr->filePath, strlen(curr->filePath));
+                            write(commitFD, ":", 1);
+
+                            write(commitFD, curr->versionNum, strlen(curr->versionNum));
+                            write(commitFD, ":", 1);
+
+                            write(commitFD, liveHash, strlen(liveHash));
+                            
+                            printf("M %s\n", curr->filePath);
+                        }
+                    }
+                }
+                curr = curr->next;
+            }
+            printf(".Commit has been made.\n");
+            close(commitFD);
+            freeManifestEntryNodes(serverManifestList);
+            free(serverManifestList);
+
+            //Send the .Commit to the server
+
+        }
     }
-
-
-
 }
 // add an entry for the the file
 // to its client's .Manifest with a new version number and hashcode
@@ -555,93 +729,94 @@ void removeFile(char* projName, char* fileName)
 
 void destroy(char* projName)
 {
-        int sock, port, numBytes;
-        struct sockaddr_in serverAddr;
-        struct hostent* server;
+    int sock, port, numBytes;
+    struct sockaddr_in serverAddr;
+    struct hostent* server;
 
-        //read from .configure file to obtain IP and port#
-        int fd = open("./.configure", O_RDONLY);
-            if(fd == -1) { //if file does not exist
-            printf("Error: missing .configure\n");
-            close(fd);
-            return;
-        }
-
-        fd = open("./.configure", O_RDONLY);
-        port = getPortNum(fd);
+    //read from .configure file to obtain IP and port#
+    int fd = open("./.configure", O_RDONLY);
+        if(fd == -1) { //if file does not exist
+        printf("Error: missing .configure\n");
         close(fd);
+        return;
+    }
 
-        sock = socket(AF_INET, SOCK_STREAM, 0);
-        if(sock < 0)
-        {
-            printf("Error: socket failed to open.\n");
-            return;
-        }
+    fd = open("./.configure", O_RDONLY);
+    port = getPortNum(fd);
+    close(fd);
 
-        fd = open("./.configure", O_RDONLY);
-        char hostName[256];
-        getHostName(fd, hostName);
-        server = gethostbyname(hostName);
-        if(server == NULL)
-        {
-            printf("Error: no such host.\n");
-            return;
-        }
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if(sock < 0)
+    {
+        printf("Error: socket failed to open.\n");
+        return;
+    }
 
-        bzero((char*)(&serverAddr), sizeof(serverAddr));
-        serverAddr.sin_family = AF_INET;
-        bcopy((char*)(server->h_addr), (char*)(&serverAddr.sin_addr.s_addr), server->h_length);
-        serverAddr.sin_port = htons(port);
+    fd = open("./.configure", O_RDONLY);
+    char hostName[256];
+    getHostName(fd, hostName);
+    server = gethostbyname(hostName);
+    if(server == NULL)
+    {
+        printf("Error: no such host.\n");
+        return;
+    }
 
-        if(connect(sock, (struct sockaddr*)(&serverAddr), sizeof(serverAddr)) < 0)
-        {
-            printf("Error: could not connect.\n");
-            return;
-        }
+    bzero((char*)(&serverAddr), sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    bcopy((char*)(server->h_addr), (char*)(&serverAddr.sin_addr.s_addr), server->h_length);
+    serverAddr.sin_port = htons(port);
 
-        printf("Sending Project: %s to destroy\n", projName);
+    if(connect(sock, (struct sockaddr*)(&serverAddr), sizeof(serverAddr)) < 0)
+    {
+        printf("Error: could not connect.\n");
+        return;
+    }
 
-        // des:<projectNameLength>:<projectName>
-        char* baseCmd = (char*)(malloc((strlen("des:") + strlen(projName) + 1) * sizeof(char)));
-        strcpy(baseCmd, "des:");
-        strcat(baseCmd, projName);
-        strcat(baseCmd, "\0");
+    printf("Sending Project: %s to destroy\n", projName);
+
+    // des:<projectNameLength>:<projectName>
+    char* baseCmd = (char*)(malloc((strlen("des:") + strlen(projName) + 1) * sizeof(char)));
+    strcpy(baseCmd, "des:");
+    strcat(baseCmd, projName);
+    strcat(baseCmd, "\0");
+    
+    int numBytesToSend = strlen(baseCmd);
+    char numBytesBuffer[10];
+    memset(numBytesBuffer, '\0', 10 * sizeof(char));
+    sprintf(numBytesBuffer, "%d", numBytesToSend);
+
+    char* fullCmd = (char*)(malloc((strlen(numBytesBuffer) + 1 + strlen(baseCmd) + 1) * sizeof(char)));
+    strcpy(fullCmd, numBytesBuffer);
+    strcat(fullCmd, ":");
+    strcat(fullCmd, baseCmd);
+    strcat(fullCmd, "\0");
+    //printf("%s\n", fullCmd);
+
+    free(baseCmd);
+    
+    send(sock, fullCmd, strlen(fullCmd), 0);
+    free(fullCmd);
+    // Server Sends back SocketBuffer that says destroyed: blah blah 
+    // or "failed:<fail Reason>:"
+    SocketBuffer *socketBuffer = createBuffer();
+    
+    readTillDelimiter(socketBuffer, sock, ':');
+    char *responsefrmServer = readAllBuffer(socketBuffer);
+    
+    if(strcmp(responsefrmServer, "destroyed") == 0) {
+        printf("Project %s destroyed successfully\n",projName);
         
-        int numBytesToSend = strlen(baseCmd);
-        char numBytesBuffer[10];
-        memset(numBytesBuffer, '\0', 10 * sizeof(char));
-        sprintf(numBytesBuffer, "%d", numBytesToSend);
-
-        char* fullCmd = (char*)(malloc((strlen(numBytesBuffer) + 1 + strlen(baseCmd) + 1) * sizeof(char)));
-        strcpy(fullCmd, numBytesBuffer);
-        strcat(fullCmd, ":");
-        strcat(fullCmd, baseCmd);
-        strcat(fullCmd, "\0");
-        //printf("%s\n", fullCmd);
-
-        free(baseCmd);
-        
-        send(sock, fullCmd, strlen(fullCmd), 0);
-        // Server Sends back SocketBuffer that says destroyed: blah blah 
-        // or "failed:<fail Reason>:"
-        SocketBuffer *socketBuffer = createBuffer();
-        
+    } else {
+        // failed to destroy
+        printf("Project could not be destroyed on server.\n");		
         readTillDelimiter(socketBuffer, sock, ':');
-        char *responsefrmServer = readAllBuffer(socketBuffer);
-        
-        if(strcmp(responsefrmServer, "destroyed") == 0) {
-            printf("Project %s destroyed successfully\n",projName);
-            
-        } else {
-            // failed to destroy
-            printf("Project could not be destroyed on server.\n");		
-            readTillDelimiter(socketBuffer, sock, ':');
-            char *reason = readAllBuffer(socketBuffer);
-            printf("Reason: %s\n", reason);
-            free(reason);
-        }
-        freeSocketBuffer(socketBuffer);
-        free(responsefrmServer);
+        char *reason = readAllBuffer(socketBuffer);
+        printf("Reason: %s\n", reason);
+        free(reason);
+    }
+    freeSocketBuffer(socketBuffer);
+    free(responsefrmServer);
 
 }
 
@@ -849,6 +1024,7 @@ void create(char* projName)
     free(baseCmd);
     
     send(sock, fullCmd, strlen(fullCmd), 0);
+    free(fullCmd);
 
     //expect some message in return, or some .Manifest, then create project locally
     SocketBuffer *socketBuffer = createBuffer();
