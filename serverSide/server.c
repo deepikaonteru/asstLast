@@ -42,6 +42,7 @@ char *readFileContents(char *fileName) {
 
 	close(fileFd);
 	result[i] = '\0';
+    //printf("%s\n", result);
 	return result;
 
 }
@@ -119,13 +120,15 @@ void writeFToSocket(int sock, char *projName, const char *fileExtension) {
     int numBytesRead = read(fd, readIn, fileSize);
     close(fd);
 
-	sprintf(path, "%d:%s%ld:", strlen(fileExtension), fileExtension, fileSize);
-	write(sock, path, strlen(path));
+    char* fileInfo = (char*)(malloc(sizeof(char) * (16 + strlen(fileExtension) + 16)));
+	sprintf(fileInfo, "%d:%s:%ld:", strlen(fileExtension), fileExtension, fileSize);
+	write(sock, fileInfo, strlen(fileInfo));
+    //printf("%s\n", readIn);
 		
     //Write contents 
     write(sock, readIn, numBytesRead);
+    //sendfile:1:9:.Manifest:<numBytesRead>:<readIn>
 
-	close(fd);
 	free(path);
 }
 
@@ -414,7 +417,7 @@ int main(int argc, char *argv[])
                     serverDestroy(projName, newSocket);
                 }
 
-                 if(strcmp(cmdBuf, "currVer") == 0)
+                if(strcmp(cmdBuf, "cv") == 0)
                 {
                     char* projName = strchr(fullCmdBuf, ':') + 1;
                     serverCurrentVersion(projName, newSocket);

@@ -496,10 +496,10 @@ void getCurrentVersion(char* projName)
 
     //read from .configure file to obtain IP and port#
     int fd = open("./.configure", O_RDONLY);
-        if(fd == -1) { //if file does not exist
-		printf("Error: missing .configure\n");
-		close(fd);
-		return;
+    if(fd == -1) { //if file does not exist
+        printf("Error: missing .configure\n");
+        close(fd);
+        return;
 	}
 
     fd = open("./.configure", O_RDONLY);
@@ -536,15 +536,30 @@ void getCurrentVersion(char* projName)
 
      printf("Trying to get current version of Project: %s.\n", projName);
 
+    //<lengthAfterFirstColon>:cv:<projectName>
+    char* baseCmd = (char*)(malloc((strlen("cv:") + strlen(projName) + 1) * sizeof(char)));
+    strcpy(baseCmd, "cv:");
+    strcat(baseCmd, projName);
+    strcat(baseCmd, "\0");
+    
+    int numBytesToSend = strlen(baseCmd);
+    char numBytesBuffer[10];
+    memset(numBytesBuffer, '\0', 10 * sizeof(char));
+    sprintf(numBytesBuffer, "%d", numBytesToSend);
 
-     // currentversion:<projectNameLength>:<projectName>
-	char *command = malloc(sizeof(char) * (strlen(projName) + 50));;
-	sprintf(command, "%s:%d:%s", "currVer", strlen(projName), projName);
-	write(sock, command, strlen(command));
-	free(command);
+    char* fullCmd = (char*)(malloc((strlen(numBytesBuffer) + 1 + strlen(baseCmd) + 1) * sizeof(char)));
+    strcpy(fullCmd, numBytesBuffer);
+    strcat(fullCmd, ":");
+    strcat(fullCmd, baseCmd);
+    strcat(fullCmd, "\0");
+    //printf("%s\n", fullCmd);
+
+    free(baseCmd);
+    
+    send(sock, fullCmd, strlen(fullCmd), 0);
 
     // server sends back 
-    // sendfile:<numFiles>:<ManifestNameLen>:<manifest name><numBytes>:<contents>
+    // sendfile:<numFiles>:<ManifestNameLen>:<manifest name>:<numBytesOfContent>:<contents>
 	// OR "failed:<fail Reason>:"
  
     SocketBuffer *socketBuffer = createBuffer();
@@ -556,7 +571,30 @@ void getCurrentVersion(char* projName)
 		
         //The client should output a list of all
         //files under the project name, along with their version number (i.e., number of updates).
-		
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* numFiles = readAllBuffer(socketBuffer);
+        int nF = atoi(numFiles);
+
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* lenExt = readAllBuffer(socketBuffer);
+        long lExt = atol(lenExt);
+
+        readNBytes(socketBuffer, sock, lExt + 1);
+        char* ext = readAllBuffer(socketBuffer);
+        
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* numBytesContent = readAllBuffer(socketBuffer);
+        long nBytesContent = atol(numBytesContent);
+        
+        Manifest* manifestList = readManifest(sock);
+        ManifestEntryNode* curr = manifestList->head;
+        while(curr != NULL)
+        {
+            //printf("%s\n", curr->filePath);
+            char* fileName = strrchr(curr->filePath, '/') + 1;
+            printf("File: %s\t\tVersion: %s\n", fileName, curr->versionNum);
+            curr = curr->next;
+        }
 	} else {
 		printf("Could not get project version from server.\n");		
 		readTillDelimiter(socketBuffer, sock, ':');
@@ -715,7 +753,7 @@ int main(int argc, char *argv[])
     }
 
     //currentVersion step
-    else if(strcmp(argv[1], "currentVersion") == 0)
+    else if(strcmp(argv[1], "currentversion") == 0)
     {
         if(argc < 3) {
 			printf("Error: Parameters missing\n");
@@ -737,6 +775,70 @@ int main(int argc, char *argv[])
     else if(strcmp(argv[1], "remove") == 0)
     {
         removeFile(argv[2], argv[3]);
+    }
+    else if(strcmp(argv[1], "checkout") == 0)
+    {
+        //CHECKOUT
+        //Step 1: Check if project exists locally
+            //if it does, then end the command, don't even contact server
+        //Step 2: Check if you can connect to server
+            //if no .configure, end command
+            //if connection isn't valid (i.e. can't connect), end command
+        //Step 3: Once connection is established, check to see if project exists on server
+            //if it does not exist on server, server reports that project DNE, end command
+            //if it DOES exist...
+                //need a way to compress the entire project folder for the latest version
+                //could use system(tar...) to compress whole folder on serverSide, then...
+                //send that compressed file over to clientSide and decompress it
+                //extract all files, rename the folder from <versionNumber> to <projectName>
+    }
+    else if(strcmp(argv[1], "commit") == 0)
+    {
+        //COMMIT
+        //Step 1: Fetch server's .Manifest for specified project
+        //Step 2: Check if version numbers of client and server .Manifest files match
+            //if they do, create a .Commit file and read through client's .Manifest
+                //read each entry that has a code that is NOT 'N'
+                //. Look for those codes that signify added files, changed files and 
+                //removed files rather than scanning through the entire entry). 
+        //Step 3: writing to .Commit file
+            //Where code is 'A,' that means file must be added, write to .Commit AND stdout: "A <file path>"
+            //Where code is 'M,' that means file must be modified, write to .Commit AND stdout: "M <file path>"
+            //Where code is 'R,' that means file must be removed, write to .Commit AND stdout: "D <file path>"
+            //Add: client will have a file not in server
+            //Modify: client and server will have file, but hash of client will be different from live hash
+            //Delete: client will untrack a file, server will still have it
+            //When writing to .Commit for modified code, write with an incremented file version number and new hash code
+        //Step 4: Send .Commit from client to server, server should save and report success back to client
+        //if project not in server, FAIL
+        //if client can't connect, FAIL
+        //if client has a .Update that is not empty, FAIL (if there is no .Update, it's fine)
+        //If .Manifest of client and server do not have matching version numbers, FAIL
+        //If server .Manifest contains different hash AND greater version number for a file, FAIL
+            //this means you have to sync with server repo first before committing any changes
+        //If FAIL, delete .Commit
+    }
+    else if(strcmp(argv[1], "push") == 0)
+    {
+        //PUSH
+        //Step 1: Client send .Commit to server
+            //if server has .Commit for this client, and they are same, then server must request files
+            //that need to be changed
+            //If there are other .Commit files pending, expire them so that push calls from other clients fail
+        //Step 2: If the check from step 1 passes, then server should send to client what files it needs
+            //...unless they're being removed
+        //Step 3: Client should then send those specified files
+        //Step 4: when server receives files, it should physically update files (create the ones it needs, replace the ones modified)
+        //Step 5: for both .Manifest files of client and server
+            //...increment project version number
+            //...increment file version numbers
+            //...update hashes
+            //...remove status codes
+        //Step 6: expire the .Commit
+        //if project doesn't exist on server, FAIL
+        //if client can't connect, FAIL
+        //if the .Commit does not exist on the server, FAIL
+        //if the .Commit files are not the same, FAIL (client has to call commit again)
     }
 
     //add step
