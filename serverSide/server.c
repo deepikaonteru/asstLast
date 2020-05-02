@@ -56,16 +56,17 @@ char *readCurrentVersion(char *projName) {
 	return result;
 }
 
-int DirExistsCheck(char *dirName) {
+int DirExistsCheck(char* dirName)
+{
+    struct stat stats;
+    int res = 0;
 
-    DIR* dir = opendir(dirName);
-    if (dir) {
-        /* Directory exists. */
-        return 1;
-        closedir(dir);
-    } else {
-        return 0;
-    }
+    // Check for dir existence
+    if (stat(dirName, &stats) == 0 && S_ISDIR(stats.st_mode))
+        res = 1;
+
+    //printf("%d\n", res);
+    return res;
 }
 
 int fileExistsCheck(char *fileName) {
@@ -206,7 +207,7 @@ void serverDestroy(char* projName, int sock){
     strcat(path, projName);
     //printf("%s\n",path);
 
-    if(!fileExistsCheck(path)) 
+    if(!ProjInServerRepos(projName)) 
     {
 		writeErrorToSocket(sock, "Project does not exist.");
 	} 
@@ -215,7 +216,10 @@ void serverDestroy(char* projName, int sock){
 		char *path = malloc(sizeof(char) * (strlen(projName) + 50 + strlen(SERVER_REPOS)));
 		sprintf(path, "%s/%s", SERVER_REPOS, projName);
 			
-        removeDir(path);
+        //removeDir(path);
+        char* sysCmd = (char*)(malloc(sizeof(char) * (strlen("rm -r ") + strlen(path))));
+        sprintf(sysCmd, "rm -r %s", path);
+        system(sysCmd);
             
         free(path);
 			
