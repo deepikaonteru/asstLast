@@ -225,6 +225,7 @@ static void compressProject(int sockFd, char *filePath, char *baseDir) {
 	
 	// now write compressed data to socket.
 	writeNBytesToFile(numBytes, readFd, sockFd);
+    write(sockFd, ":", 1);
 	
 	close(readFd);
 	unlink(pathToCompressedFile);

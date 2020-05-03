@@ -260,26 +260,43 @@ void serverCheckout(char* projName, int sock)
             char* pathToCVManifest = (char*)(malloc(sizeof(char) * (strlen(pathToProj) + 1 + strlen(cv) + strlen("/.Manifest"))));
             sprintf(pathToCVManifest, "%s/%s/.Manifest", pathToProj, cv);
 
+            //char* pathToCV = (char*)(malloc(sizeof(char) * (strlen(pathToProj) + 1 + strlen(cv))));
+            //sprintf(pathToCV, "%s/%s", pathToProj, cv);
+            //printf("%s\n", pathToCV);
+
             // get its manifest contents and all its contents compressed
             int manifestFD = open(pathToCVManifest, O_RDONLY, 00777);
             Manifest* projManifest = readManifest(manifestFD);
-            int numFilesSending = projManifest-> numFiles;
-            char nF[10];
-            sprintf(nF,"%s", numFilesSending);
+            int numFilesSending = projManifest->numFiles + 1;
+            char nF[11];
+            sprintf(nF,"%d:", numFilesSending);
             //printf("%s\n",nF);
             write(sock, nF, strlen(nF));
 
+            //long int manifestSize = findFileSize(pathToCVManifest);
+            //char mSize[11];
+            //memset(mSize, '\0', 11 * sizeof(char));
+            //sprintf(manifestSize, "%ld:", manifestSize);
+            //write(sock, mSize, strlen(mSize));
+            write(sock, ".Manifest:", strlen(".Manifest:"));
             compressProject(sock, pathToCVManifest, pathToProj);
             write(sock, ":", 1);
             close(manifestFD);
 
             // loop through manifest struct
+            ManifestEntryNode* currEntry = projManifest->head;
+            while(currEntry != NULL)
+            {
+                char* fileToCompress = currEntry->filePath;
+                printf("%s\n", fileToCompress);
+                char* fileName = strrchr(fileToCompress, '/') + 1;
+                write(sock, fileName, strlen(fileName));
+                write(sock, ":", 1);
+                compressProject(sock, fileToCompress, pathToProj);
+                printf("%s\n", fileName);
+                currEntry = currEntry->next;
+            }
 
-
-
-
-
-            
 			//write(sock, "sendProject:", strlen("sendProject:"));
 
 

@@ -979,20 +979,46 @@ void checkout(char* projName)
     send(sock, fullCmd, strlen(fullCmd), 0);
 
     //Client is expecting a message that sends the project over or a failed message
+    //sendProject:<numFilesBeingSent>:<file1Name>:<file1Size>:<file1Content>:<file2Name>:...
     SocketBuffer *socketBuffer = createBuffer();
 
     readTillDelimiter(socketBuffer, sock, ':');
     char* responseCode = readAllBuffer(socketBuffer);
-    printf("%s\n", responseCode);
+    //printf("%s\n", responseCode);
 
-    readTillDelimiter(socketBuffer, sock, ':');
-    char* len = readAllBuffer(socketBuffer);
-    printf("%s\n", len);
+    //if sendProject, then we want to read n times, where n is the number of files sent by server
+    if(strcmp(responseCode, "sendProject") == 0)
+    {
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* numFiles = readAllBuffer(socketBuffer);
+        int n = atoi(numFiles);
+        printf("%d\n", n);
+        int i;
+        for(i = 0; i < n; i ++)
+        {
+            readTillDelimiter(socketBuffer, sock, ':');
+            char* fileName = readAllBuffer(socketBuffer);
+            printf("%s\n", fileName);
 
-    readNBytes(socketBuffer, sock, ':');
-    char* content = readAllBuffer(socketBuffer);
-    printf("%s\n", content);
-	
+            readTillDelimiter(socketBuffer, sock, ':');
+            char* fileSize = readAllBuffer(socketBuffer);
+            long int fSize = atol(fileSize);
+            printf("%ld\n", fSize);
+
+            readTillDelimiter(socketBuffer, sock, ':');
+            char* compressedFileContent = readAllBuffer(socketBuffer);
+            printf("%s\n", compressedFileContent);
+
+            readTillDelimiter(socketBuffer, sock, ':');
+        }
+
+    }
+    //if not sendProject, FAIL
+    else
+    {
+        
+    }
+    
 
 }
 void getCurrentVersion(char* projName)
