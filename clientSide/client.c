@@ -76,7 +76,7 @@ void writeFileFromSocket(int sockToRead, char *projName) { //lenOfFileName:fileN
 	free(pathToManifest);
 }
 
-Manifest* readManifestInClient(char *projName) {
+Manifest* readManifestInClientSide(char *projName) {
 	char *path = malloc(sizeof(char) * (strlen(projName) + 50));
 
     char* pathToManifest = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(DOT_MANIFEST) )));
@@ -449,7 +449,7 @@ void commit(char* projName)
         id = atol(ID);
         //printf("%s\n", ID);
 
-        Manifest* clientManifestList = readManifestInClient(projName);
+        Manifest* clientManifestList = readManifestInClientSide(projName);
 
         //Step 2: Check if version numbers of client and server .Manifest files match
         //if they do, create a .Commit file and read through client's .Manifest
@@ -887,6 +887,104 @@ void destroy(char* projName)
 }
 
 
+void checkout(char* projName)
+{
+    //Step 1: Check if project exists locally
+        //if it does, then end the command, don't even contact server
+    char* pathToProject = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName))));
+    sprintf(pathToProject, "%s/%s", CLIENT_REPOS, projName);
+    if(projExistsInClient(pathToProject) == 0) {
+        printf("Error: Project does not exist in local repo.\n");
+        free(pathToProject);
+        return;
+    }
+
+    //Step 2: Check if you can connect to server
+        //if no .configure, end command
+        //if connection isn't valid (i.e. can't connect), end command
+
+    int sock, port, numBytes;
+    struct sockaddr_in serverAddr;
+    struct hostent* server;
+
+    //read from .configure file to obtain IP and port#
+    int fd = open("./.configure", O_RDONLY);
+        if(fd == -1) { //if file does not exist
+		printf("Error: missing .configure\n");
+		close(fd);
+		return;
+	}
+
+    fd = open("./.configure", O_RDONLY);
+    port = getPortNum(fd);
+    close(fd);
+
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if(sock < 0)
+    {
+        printf("Error: socket failed to open.\n");
+        return;
+    }
+
+    fd = open("./.configure", O_RDONLY);
+    char hostName[256];
+    getHostName(fd, hostName);
+    server = gethostbyname(hostName);
+    if(server == NULL)
+    {
+        printf("Error: no such host.\n");
+        return;
+    }
+
+    bzero((char*)(&serverAddr), sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    bcopy((char*)(server->h_addr), (char*)(&serverAddr.sin_addr.s_addr), server->h_length);
+    serverAddr.sin_port = htons(port);
+
+    if(connect(sock, (struct sockaddr*)(&serverAddr), sizeof(serverAddr)) < 0)
+    {
+        printf("Error: could not connect.\n");
+        return;
+    }
+
+    //Step 3: Once connection is established, check to see if project exists on server
+        //if it does not exist on server, server reports that project DNE, end command
+        //if it DOES exist...
+            //need a way to compress the entire project folder for the latest version
+            //could use system(tar...) to compress whole folder on serverSide, then...
+            //send that compressed file over to clientSide and decompress it
+            //extract all files, rename the folder from <versionNumber> to <projectName>
+    
+    // Request to get project from server 
+    //<lengthAfterFirstColon>:co:<projName>
+    char* baseCmd = (char*)(malloc((strlen("co:") + strlen(projName) + 1) * sizeof(char)));
+    strcpy(baseCmd, "co:");
+    strcat(baseCmd, projName);
+    strcat(baseCmd, "\0");
+    
+    int numBytesToSend = strlen(baseCmd);
+    char numBytesBuffer[10];
+    memset(numBytesBuffer, '\0', 10 * sizeof(char));
+    sprintf(numBytesBuffer, "%d", numBytesToSend);
+
+    char* fullCmd = (char*)(malloc((strlen(numBytesBuffer) + 1 + strlen(baseCmd) + 1) * sizeof(char)));
+    strcpy(fullCmd, numBytesBuffer);
+    strcat(fullCmd, ":");
+    strcat(fullCmd, baseCmd);
+    strcat(fullCmd, "\0");
+    printf("%s\n", fullCmd);
+
+    free(baseCmd);
+    
+    send(sock, fullCmd, strlen(fullCmd), 0);
+
+    //Client is expecting a message that sends the project over or a failed message
+    SocketBuffer *socketBuffer = createBuffer();
+
+    
+	
+
+}
 void getCurrentVersion(char* projName)
 {
     int sock, port, numBytes;
@@ -1165,12 +1263,21 @@ int main(int argc, char *argv[])
     //destroy step
     else if(strcmp(argv[1], "destroy") == 0)
     {
-        destroy(argv[2]);
+        if(argc < 3) {
+			printf("Error: Parameters missing\n");
+		} else {
+            destroy(argv[2]);
+		}
     }
     //add step
     else if(strcmp(argv[1], "add") == 0)
     {
-        addFile(argv[2], argv[3]);
+         if(argc < 4) {
+			printf("Error: Parameters missing\n");
+		} else {
+            addFile(argv[2], argv[3]);
+		}
+        
     }
     else if(strcmp(argv[1], "remove") == 0)
     {
@@ -1178,6 +1285,12 @@ int main(int argc, char *argv[])
     }
     else if(strcmp(argv[1], "checkout") == 0)
     {
+        if(argc < 3) {
+			printf("Error: Parameters missing\n");
+		} else {
+            checkout(argv[2]);
+		}
+        
         //CHECKOUT
         //Step 1: Check if project exists locally
             //if it does, then end the command, don't even contact server

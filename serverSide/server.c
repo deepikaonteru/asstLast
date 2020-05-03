@@ -242,6 +242,49 @@ int ProjInServerRepos(char *projName) {
 
 }
 
+void serverCheckout(char* projName, int sock)
+{
+    //if it does not exist on server, server reports that project DNE, end command
+    char* path = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
+    strcpy(path, SERVER_REPOS);
+    strcat(path, "/");
+    strcat(path, projName);
+		
+	if(!ProjInServerRepos(projName)) {
+		writeErrorToSocket(sock, "Project does not exist.");
+			
+	} else {
+          //if it DOES exist...
+            //need a way to compress the entire project folder for the latest version
+            //could use system(tar...) to compress whole folder on serverSide, then...
+            //send that compressed file over to clientSide and decompress it
+            //extract all files, rename the folder from <versionNumber> to <projectName>
+
+
+            // get current version from readCurrentVersion()
+
+            char cv = readCurrentVersion(projName);
+
+            // make a path to that current version folder for that project
+
+            // get its manifest contents and all its contents compressed
+
+            // 
+
+
+
+
+            
+			write(sockfd, "sendProject:", strlen("sendProject:"));
+
+
+			
+
+	}
+    
+
+}
+
 void serverCommit(char* projName, int sock)
 {
     char* path = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
@@ -519,6 +562,12 @@ int main(int argc, char *argv[])
                 {
                     char* projName = strchr(fullCmdBuf, ':') + 1;
                     serverCommit(projName, newSocket);
+                }
+
+                if(strcmp(cmdBuf, "co") == 0)
+                {
+                    char* projName = strchr(fullCmdBuf, ':') + 1;
+                    serverCheckout(projName, newSocket);
                 }
             }
         }
