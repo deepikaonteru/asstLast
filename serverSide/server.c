@@ -263,11 +263,15 @@ void serverCheckout(char* projName, int sock)
             // get its manifest contents and all its contents compressed
             int manifestFD = open(pathToCVManifest, O_RDONLY, 00777);
             Manifest* projManifest = readManifest(manifestFD);
+            int numFilesSending = projManifest-> numFiles;
+            char nF[10];
+            sprintf(nF,"%s", numFilesSending);
+            //printf("%s\n",nF);
+            write(sock, nF, strlen(nF));
+
             compressProject(sock, pathToCVManifest, pathToProj);
             write(sock, ":", 1);
             close(manifestFD);
-
-            // write the mani
 
             // loop through manifest struct
 
