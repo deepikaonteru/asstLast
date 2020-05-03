@@ -972,7 +972,7 @@ void checkout(char* projName)
     strcat(fullCmd, ":");
     strcat(fullCmd, baseCmd);
     strcat(fullCmd, "\0");
-    printf("%s\n", fullCmd);
+    //printf("%s\n", fullCmd);
 
     free(baseCmd);
     
@@ -981,7 +981,17 @@ void checkout(char* projName)
     //Client is expecting a message that sends the project over or a failed message
     SocketBuffer *socketBuffer = createBuffer();
 
-    
+    readTillDelimiter(socketBuffer, sock, ':');
+    char* responseCode = readAllBuffer(socketBuffer);
+    printf("%s\n", responseCode);
+
+    readTillDelimiter(socketBuffer, sock, ':');
+    char* len = readAllBuffer(socketBuffer);
+    printf("%s\n", len);
+
+    readNBytes(socketBuffer, sock, ':');
+    char* content = readAllBuffer(socketBuffer);
+    printf("%s\n", content);
 	
 
 }

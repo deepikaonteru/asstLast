@@ -10,23 +10,13 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include "socketBuffer.h"
+#include "zlibCompDecomp.h"
 char SERVER_REPOS[] = "./serverRepos";
 char DOT_VERSION[] = ".version";
 char DOT_HISTORY[] = ".history";
 char DOT_COMMITS[] = ".Commits";
+char DOT_PROJECT[] = ".project";
 long int id = 0;
-
-
-long int findFileSize(const char *fileName) {
-		
-	struct stat buffer;
-	int status = stat(fileName, &buffer);
-	// if permission available
-	if(status == 0) {
-		return buffer.st_size;
-	}
-	return -1;
-}
 
 char *readFileContents(char *fileName) {
 	if(!fileExistsCheck(fileName)) {
@@ -76,7 +66,7 @@ int fileExistsCheck(char *fileName) {
 	return (stat(fileName, &buffer) == 0);
 }
 
-void writeFileToSocket(int sock, const char *filePath) {
+void writeFileToSocket(int sock, char *filePath) {
     //Find fileName
     char* fileName = strrchr(filePath, '/') + 1; //./serverRepos/test/1/.Manifest
     //Find lenOfFileName
@@ -245,10 +235,10 @@ int ProjInServerRepos(char *projName) {
 void serverCheckout(char* projName, int sock)
 {
     //if it does not exist on server, server reports that project DNE, end command
-    char* path = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
-    strcpy(path, SERVER_REPOS);
-    strcat(path, "/");
-    strcat(path, projName);
+    char* pathToProj = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
+    strcpy(pathToProj, SERVER_REPOS);
+    strcat(pathToProj, "/");
+    strcat(pathToProj, projName);
 		
 	if(!ProjInServerRepos(projName)) {
 		writeErrorToSocket(sock, "Project does not exist.");
@@ -260,22 +250,33 @@ void serverCheckout(char* projName, int sock)
             //send that compressed file over to clientSide and decompress it
             //extract all files, rename the folder from <versionNumber> to <projectName>
 
+            //write beginning of msg to client
+            write(sock, "sendProject:", strlen("sendProject:"));
 
             // get current version from readCurrentVersion()
-
-            char cv = readCurrentVersion(projName);
+            char* cv = readCurrentVersion(projName);
 
             // make a path to that current version folder for that project
+            char* pathToCVManifest = (char*)(malloc(sizeof(char) * (strlen(pathToProj) + 1 + strlen(cv) + strlen("/.Manifest"))));
+            sprintf(pathToCVManifest, "%s/%s/.Manifest", pathToProj, cv);
 
             // get its manifest contents and all its contents compressed
+            int manifestFD = open(pathToCVManifest, O_RDONLY, 00777);
+            Manifest* projManifest = readManifest(manifestFD);
+            compressProject(sock, pathToCVManifest, pathToProj);
+            write(sock, ":", 1);
+            close(manifestFD);
 
-            // 
+            // write the mani
+
+            // loop through manifest struct
+
 
 
 
 
             
-			write(sockfd, "sendProject:", strlen("sendProject:"));
+			//write(sock, "sendProject:", strlen("sendProject:"));
 
 
 			

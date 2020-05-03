@@ -1,8 +1,10 @@
 #ifndef COMPRESSOR_H
 #define COMPRESSOR_H
 
-#include <zlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <assert.h>
+#include <zlib.h>
 
 #if defined(MSDOS) || defined(OS2) || defined(WIN32) || defined(__CYGWIN__)
 #  include <fcntl.h>
@@ -14,11 +16,34 @@
 
 #define CHUNK 16384
 
+static void writeNBytesToFile(long nBytes, int sockToRead, int sockToWrite) {
+    /*
+	while(nBytes-- > 0) {
+		char c;
+		read(sockToRead, &c, 1);
+		write(sockToWrite, &c, 1);
+	}*/
+    char* readIn = (char*)(malloc(sizeof(char) * nBytes));
+    read(sockToRead, readIn, nBytes);
+    write(sockToWrite, readIn, nBytes);
+}
+
+long int findFileSize(char *fileName) {
+		
+	struct stat buffer;
+	int status = stat(fileName, &buffer);
+	// if permission available
+	if(status == 0) {
+		return buffer.st_size;
+	}
+	return -1;
+}
+
 // Compress the input file and write data on output file
 static void compressFile(char *source, char *dest)
 {
-	int readFd = open(source, O_RDONLY, 0777);
-	int writeFd = open(dest, O_CREAT | O_WRONLY | O_TRUNC, 0777);	
+	int readFd = open(source, O_RDONLY, 00777);
+	int writeFd = open(dest, O_CREAT | O_WRONLY | O_TRUNC, 00777);	
 	
     int ret, flush;
     unsigned numBytes;
@@ -78,8 +103,8 @@ static void compressFile(char *source, char *dest)
 // DeCompress the input file and write data on output file
 static void decompressFile(char *source, char *dest)
 {
-	int readFd = open(source, O_RDONLY, 0777);
-	int writeFd = open(dest, O_CREAT | O_WRONLY | O_TRUNC, 0777);	
+	int readFd = open(source, O_RDONLY, 00777);
+	int writeFd = open(dest, O_CREAT | O_WRONLY | O_TRUNC, 00777);	
 	
     int ret;
     unsigned numBytes;
@@ -159,9 +184,9 @@ static void decompressProject(int sockFd, char *projectFile, char *baseDir) {
 	printf("Reading %ld bytes from socket\n", numBytes); fflush(stdout);
 	
 	char path[100];
-	sprintf(path, "%s/tmp_res%lld_%d", baseDir, current_timestamp(), rand());
-	createDirStructureIfNeeded(path);
-	int writeFd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0777);
+	//sprintf(path, "%s/tmp_res%lld_%d", baseDir);
+	//createDirStructureIfNeeded(path);
+	int writeFd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 00777);
 	
 	// first right encrypted data to a temp file.
 	writeNBytesToFile(numBytes, sockFd, writeFd); 
@@ -179,29 +204,31 @@ static void decompressProject(int sockFd, char *projectFile, char *baseDir) {
 
 
 
-// writes sent project in this format - <contentLen>:<compressed data>
-static void compressProject(int sockFd, char *projectFile, char *baseDir) {
-	
-	char *path = malloc(sizeof(char) * (strlen(baseDir) + 50));		
+// writes sent project in this format - <contentLen>:<compressed data>:...
+//filePath: path to a file we want to compress
+//.projectC is temporary
+static void compressProject(int sockFd, char *filePath, char *baseDir) {
+	//baseDir: serverRepos/<projName>
+	char *pathToCompressedFile = malloc(sizeof(char) * (strlen(baseDir) + strlen("/.projectC")));		
 	
 	// convert .project file to zlib compressed.
-	char buffer[100];
-	sprintf(path, "%s/tmp_res%lld_%d", baseDir, current_timestamp_millis(), rand());
+	char numBytesBuffer[11];
+	sprintf(pathToCompressedFile, "%s/.projectC", baseDir);
 	
-	compressFile(projectFile, path);
-	long numBytes = findFileSize(path);
+	compressFile(filePath, pathToCompressedFile);
+	long int numBytes = findFileSize(pathToCompressedFile);
 	
-	int readFd = open(path, O_RDONLY, 0777);
+	int readFd = open(pathToCompressedFile, O_RDONLY, 00777);
 	
-	sprintf(buffer, "%ld:", numBytes);
-	write(sockFd, buffer, strlen(buffer));
+	sprintf(numBytesBuffer, "%ld:", numBytes);
+	write(sockFd, numBytesBuffer, strlen(numBytesBuffer));
 	
 	// now write compressed data to socket.
 	writeNBytesToFile(numBytes, readFd, sockFd);
 	
 	close(readFd);
-	unlink(path);
-	free(path);
+	unlink(pathToCompressedFile);
+	free(pathToCompressedFile);
 }
 
 #endif
