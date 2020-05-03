@@ -260,6 +260,48 @@ void serverCommit(char* projName, int sock)
 	free(path);
     
     //Wait for .Commit file to be sent, OR failure message
+    // sendfile:<numFiles>:<ManifestNameLen>:<manifest name>:<numBytesOfContent>:<contents>
+	// OR "failed:<fail Reason>:"
+ 
+    SocketBuffer *socketBuffer = createBuffer();
+
+	readTillDelimiter(socketBuffer, sock, ':');
+	char *responseCode = readAllBuffer(socketBuffer);
+	
+	if(strcmp(responseCode, "sendfile") == 0) {	
+		
+        //The client should output a list of all
+        //files under the project name, along with their version number (i.e., number of updates).
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* numFiles = readAllBuffer(socketBuffer);
+        int nF = atoi(numFiles);
+
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* lenExt = readAllBuffer(socketBuffer);
+        long lExt = atol(lenExt);
+
+        readNBytes(socketBuffer, sock, lExt + 1);
+        char* ext = readAllBuffer(socketBuffer);
+        
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* numBytesContent = readAllBuffer(socketBuffer);
+        long nBytesContent = atol(numBytesContent);
+
+        // Read .Commit's contents into a something and write to .Commit
+
+        
+	} else {
+		printf("Could not get .Commit from server.\n");		
+		readTillDelimiter(socketBuffer, sock, ':');
+		char *reason = readAllBuffer(socketBuffer);
+		printf("Reason: %s\n", reason);
+		free(reason);
+	}
+	
+	freeSocketBuffer(socketBuffer);
+	free(responseCode);
+
+    
     
 }
 

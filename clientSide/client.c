@@ -253,6 +253,48 @@ char* hashFile(char* pathToFile)
 }
 
 
+void writeDotToSocket(int sock, char *projName, const char *fileExtension) {
+	
+	// Check first if project exists.
+	printf("Writing File %s in project: %s to client.\n", fileExtension, projName);
+	char *path = malloc(sizeof(char) * (strlen(projName) + strlen(fileExtension) + 50 + strlen(CLIENT_REPOS)));
+	
+	// Read current version of project.
+	//char *version = readCurrentVersion(projName);
+
+	// Create file path on server.
+	sprintf(path, "%s/%s/%s", CLIENT_REPOS, projName, fileExtension);
+	//free(version);
+	
+	long fileSize = findFileSize(path);	
+    
+    //Get the contents of the file		
+	int fd = open(path, O_RDONLY, 00777);
+    char* readIn = (char*)(malloc(sizeof(char) * fileSize));
+    int numBytesRead = read(fd, readIn, fileSize);
+    close(fd);
+
+    char* fileInfo = (char*)(malloc(sizeof(char) * (16 + strlen(fileExtension) + 16)));
+	sprintf(fileInfo, "%d:%s:%ld:", strlen(fileExtension), fileExtension, fileSize);
+	write(sock, fileInfo, strlen(fileInfo));
+    //printf("%s\n", readIn);
+		
+    //Write contents 
+    write(sock, readIn, numBytesRead);
+    //sendfile:1:9:.Manifest:<numBytesRead>:<readIn>
+
+	free(path);
+}
+
+
+// failed: error:
+void writeErrorToSocket(int sock, char *error) {
+	write(sock, "failed:", strlen("failed:"));
+	write(sock, error, strlen(error));
+	write(sock, ":", 1);
+}
+
+
 
 void commit(char* projName)
 {
@@ -409,6 +451,7 @@ void commit(char* projName)
         //printf("%d\n", clientManifestList->versionNum);
         if(serverManifestList->versionNum != clientManifestList->versionNum) 
         {
+            writeErrorToSocket(sock, "Client has to update project first.")
             printf("Error: .Manifest version numbers do not match, call update on project first.\n");
             free(responseCode);
             freeSocketBuffer(socketBuffer);
@@ -557,6 +600,15 @@ void commit(char* projName)
             free(serverManifestList);
 
             //Send the .Commit to the server
+
+			// sendfile:<numFiles>:<projectNameLength>:<projectName><File1LenBytes>:<File1Contents>
+            //char* path = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
+
+            // send manifest file back
+            write(sock, "sendfile:", strlen("sendfile:"));
+            write(sock, "1:", 2);
+            writeDotToSocket(sock, projName, DOT_COMMIT);
+			
 
         }
     }
