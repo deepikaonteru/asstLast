@@ -16,6 +16,7 @@ char DOT_UPDATE[] = ".Update";
 char DOT_MANIFEST[] = ".Manifest";
 char DOT_CONFLICT[] = ".Conflict";
 char DOT_COMMIT[] = ".Commit";
+long int id = 0;
 
 void writeFileFromSocket(int sockToRead, char *projName) { //lenOfFileName:fileName:sizeOfFile:contentsOfFile
                                                            //9:.Manifest:
@@ -284,6 +285,8 @@ void writeDotToSocket(int sock, char *projName, const char *fileExtension) {
     //sendfile:1:9:.Manifest:<numBytesRead>:<readIn>
 
 	free(path);
+    free(readIn);
+    free(fileInfo);
 }
 
 
@@ -440,6 +443,12 @@ void commit(char* projName)
         long nBytesContent = atol(numBytesContent);
         
         Manifest* serverManifestList = readManifest(sock);
+
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* ID = readAllBuffer(socketBuffer);
+        id = atol(ID);
+        //printf("%s\n", ID);
+
         Manifest* clientManifestList = readManifestInClient(projName);
 
         //Step 2: Check if version numbers of client and server .Manifest files match
@@ -451,18 +460,15 @@ void commit(char* projName)
         //printf("%d\n", clientManifestList->versionNum);
         if(serverManifestList->versionNum != clientManifestList->versionNum) 
         {
-            writeErrorToSocket(sock, "Client has to update project first.")
+            writeErrorToSocket(sock, "Client has to update project first.");
             printf("Error: .Manifest version numbers do not match, call update on project first.\n");
             free(responseCode);
             freeSocketBuffer(socketBuffer);
             freeManifestEntryNodes(serverManifestList);
-            freeManifestEntryNodes(clientManifestList);
+            //freeManifestEntryNodes(clientManifestList);
             free(serverManifestList);
-            free(clientManifestList);
+            //free(clientManifestList);
             free(pathToProject);
-
-            //Notify server that we failed
-            
             return;
         }
         //if they do, create a .Commit file and read through client's .Manifest
@@ -480,11 +486,14 @@ void commit(char* projName)
                 //When writing to .Commit for modified code, write with an incremented file version number and live hash code
                 //If server .Manifest contains different hash AND greater version number for a file, FAIL
             //build path to .Commit, open .Commit
-            char* pathToCommit = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + 1 + strlen(projName) + 1 +strlen(DOT_COMMIT))));
-            sprintf(pathToCommit, "%s/%s/%s", CLIENT_REPOS, projName, DOT_COMMIT);
+            char* pathToCommit = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + 1 + strlen(projName) + 1 +strlen(DOT_COMMIT) + strlen(ID))));
+            sprintf(pathToCommit, "%s/%s/%s%s", CLIENT_REPOS, projName, DOT_COMMIT, ID);
             remove(pathToCommit);
             int commitFD = open(pathToCommit, O_CREAT | O_WRONLY, 00777);
+            write(commitFD, ID, strlen(ID));
+            write(commitFD, "\n", 1);
 
+            printf("\n");
             //read through each ManifestEntryNode in clientManifestList
             ManifestEntryNode* curr = clientManifestList->head;
             char* liveHash;
@@ -562,6 +571,7 @@ void commit(char* projName)
                         //check the version number of file in server against version number of file in client
                         if(atoi(fileInServer->versionNum) > atoi(curr->versionNum))
                         {
+                            writeErrorToSocket(sock, "Client must synch with the repository before making changes.");
                             printf("Error: Client must synch with the repository before making changes.\n");
                             close(commitFD);
                             remove(pathToCommit);
@@ -594,7 +604,7 @@ void commit(char* projName)
                 }
                 curr = curr->next;
             }
-            printf(".Commit has been made.\n");
+            printf("\n.Commit has been made.\n");
             close(commitFD);
             freeManifestEntryNodes(serverManifestList);
             free(serverManifestList);
@@ -604,12 +614,16 @@ void commit(char* projName)
 			// sendfile:<numFiles>:<projectNameLength>:<projectName><File1LenBytes>:<File1Contents>
             //char* path = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
 
-            // send manifest file back
+            //build name for .Commit<ID>
+            char* commitName = (char*)(malloc(sizeof(char) * (strlen(DOT_COMMIT) + strlen(ID))));
+            sprintf(commitName, "%s%s", DOT_COMMIT, ID);
+
+            // send commit file back
             write(sock, "sendfile:", strlen("sendfile:"));
             write(sock, "1:", 2);
-            writeDotToSocket(sock, projName, DOT_COMMIT);
-			
-
+            writeDotToSocket(sock, projName, commitName);
+            free(pathToCommit);
+            free(commitName);
         }
     }
 }
@@ -1106,8 +1120,8 @@ void create(char* projName)
 		printf("Reason: %s\n", reason);
 		free(reason);
 	}
+    free(responsefrmServer);
 	freeSocketBuffer(socketBuffer);
-	free(responsefrmServer);
 
     /*char resultCode[4];
     memset(resultCode, '\0', 4);
@@ -1208,21 +1222,64 @@ int main(int argc, char *argv[])
     }
     else if(strcmp(argv[1], "push") == 0)
     {
+        //server builds this message to send to client
+        //request:<numFilesNeededByServer>:<lengthFileOnePath>:<fileOnePath>:<lengthFileTwoPath>:<fileTwoPath>:...:<lengthFileNPath>:<fileNPath>
+        
+        //client builds this message to send to server
+        //sendFiles:<numFilesNeededByServer>:<lengthOfFirstFilePath>:<firstFilePath>:<sizeOfFirstFile>:<contentOfFirstFile>:...
+    
         //PUSH
         //Step 1: Client send .Commit to server
+            //if id is 0, client never called commit, so automatic FAIL
+            //.Commit<ID>
+                //if server can't open filename: .Commit<ID>, then FAIL
             //if server has .Commit for this client, and they are same, then server must request files
             //that need to be changed
             //If there are other .Commit files pending, expire them so that push calls from other clients fail
         //Step 2: If the check from step 1 passes, then server should send to client what files it needs
             //...unless they're being removed
+                //readManifest();, need this so that you can create a new .Manifest for the new version
+                //if an entry of the .Commit starts with D, remove it from the .Manifest
+                    //whenever there's a D, there's also a filePath in that entry; search for that filePath in Manifest* struct, remove the corresponding node
+                    //as soon as an entry in .Commit gets read through, the code for it in the Manifest* struct has to change from A/M to N (CHANGE manifestCode in ManifestEntryNode)
+                //in .history, keep a list of all operations performed for each version of the project
+                    //as you're reading each entry in .Commit, write the corresponding operation (A/M/D <fileName>) to .history (write under the versionNumber of the project during this push)
+                    //ex. .history format:
+                        /*
+                        1
+                        A <file1>
+                        M <file2>
+                        D <file3>
+                        D <file4>
+                        2
+                        A<file5>
+
+                        */
+            //involves building the msg stated up top
         //Step 3: Client should then send those specified files
+            //involves reading from the msg stated up top
+            //client builds a msg to send to the server, containing number of files, file contents, etc.
         //Step 4: when server receives files, it should physically update files (create the ones it needs, replace the ones modified)
+            //create directory for new version
+            //for each file (specified by numFilesNeededByServer), call open() for each of them, then write the content for each of them
+            //need to rewrite .Manifest for the new version
+            //in project directory, increment version number in .version
         //Step 5: for both .Manifest files of client and server
             //...increment project version number
             //...increment file version numbers
             //...update hashes
             //...remove status codes
+                //.Manifest of client and server must have:
+                    /*incrementedVersionNumber
+                      numFiles
+                      <entry>
+                      ...
+                    */
+                //best way: rewrite the .Manifest for the server, then send it to the client, client will then replace its current .Manifest with the one that server sends
+                //use ManifestList!!
         //Step 6: expire the .Commit
+            //close(commitFD);
+            //remove(.Commit<ID>);
         //if project doesn't exist on server, FAIL
         //if client can't connect, FAIL
         //if the .Commit does not exist on the server, FAIL

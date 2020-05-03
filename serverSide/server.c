@@ -13,6 +13,8 @@
 char SERVER_REPOS[] = "./serverRepos";
 char DOT_VERSION[] = ".version";
 char DOT_HISTORY[] = ".history";
+char DOT_COMMITS[] = ".Commits";
+long int id = 0;
 
 
 long int findFileSize(const char *fileName) {
@@ -252,12 +254,15 @@ void serverCommit(char* projName, int sock)
 			
 	} else {
 		// send manifest file back
+        id ++;
 		write(sock, "sendfile:", strlen("sendfile:"));
 		write(sock, "1:", 2);
 		writeFToSocket(sock, projName, ".Manifest");
+        char ID[11];
+        memset(ID, '\0', 11);
+        sprintf(ID, "%ld:", id);
+        write(sock, ID, strlen(ID));
 	}
-		
-	free(path);
     
     //Wait for .Commit file to be sent, OR failure message
     // sendfile:<numFiles>:<ManifestNameLen>:<manifest name>:<numBytesOfContent>:<contents>
@@ -269,7 +274,7 @@ void serverCommit(char* projName, int sock)
 	char *responseCode = readAllBuffer(socketBuffer);
 	
 	if(strcmp(responseCode, "sendfile") == 0) {	
-		
+		//<numFiles>:<lengthOfCommitName>:.Commit:<sizeOfCommit>:<contentOfCommit>
         //The client should output a list of all
         //files under the project name, along with their version number (i.e., number of updates).
         readTillDelimiter(socketBuffer, sock, ':');
@@ -280,7 +285,7 @@ void serverCommit(char* projName, int sock)
         char* lenExt = readAllBuffer(socketBuffer);
         long lExt = atol(lenExt);
 
-        readNBytes(socketBuffer, sock, lExt + 1);
+        readTillDelimiter(socketBuffer, sock, ':');
         char* ext = readAllBuffer(socketBuffer);
         
         readTillDelimiter(socketBuffer, sock, ':');
@@ -288,8 +293,21 @@ void serverCommit(char* projName, int sock)
         long nBytesContent = atol(numBytesContent);
 
         // Read .Commit's contents into a something and write to .Commit
-
+        readNBytes(socketBuffer, sock, nBytesContent);
+        char* content = readAllBuffer(socketBuffer);
         
+        //Write these contents into a .Commit file within the server repo
+        //build path to .Commits folder in project
+        char* pathToCommit = (char*)(malloc(sizeof(char) * (strlen(SERVER_REPOS) + 1 + strlen(projName) + 1 + strlen(DOT_COMMITS) + 1 + strlen(ext))));
+        sprintf(pathToCommit, "%s/%s/%s/%s", SERVER_REPOS, projName, DOT_COMMITS, ext);
+        //printf("%s\n", pathToCommitDir);
+
+        //Open file specified by pathToCommitDir and write contents in content buffer to that file
+        int commitFD = open(pathToCommit, O_CREAT | O_WRONLY, 00777);
+        write(commitFD, content, strlen(content));
+        close(commitFD);
+        printf("Commit saved successfully.\n");
+        free(pathToCommit);
 	} else {
 		printf("Could not get .Commit from server.\n");		
 		readTillDelimiter(socketBuffer, sock, ':');
@@ -300,9 +318,6 @@ void serverCommit(char* projName, int sock)
 	
 	freeSocketBuffer(socketBuffer);
 	free(responseCode);
-
-    
-    
 }
 
 void serverCurrentVersion(char* projName, int sock)
@@ -368,6 +383,10 @@ void serverCreate(char* projName, int sock)
         sprintf(path, "%s/%s/%s", SERVER_REPOS, projName, DOT_HISTORY);
         int hfd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 00777);
         close(hfd);
+        
+        //create directory for commits
+        sprintf(path, "%s/%s/%s", SERVER_REPOS, projName, ".Commits");
+        mkdir(path, 00777);
 	
         // create version directory
         sprintf(path, "%s/%s/%s", SERVER_REPOS, projName, version);
