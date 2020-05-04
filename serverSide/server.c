@@ -250,9 +250,6 @@ void serverCheckout(char* projName, int sock)
             //send that compressed file over to clientSide and decompress it
             //extract all files, rename the folder from <versionNumber> to <projectName>
 
-            //write beginning of msg to client
-            write(sock, "sendProject:", strlen("sendProject:"));
-
             // get current version from readCurrentVersion()
             char* cv = readCurrentVersion(projName);
 
@@ -264,6 +261,51 @@ void serverCheckout(char* projName, int sock)
             //sprintf(pathToCV, "%s/%s", pathToProj, cv);
             //printf("%s\n", pathToCV);
 
+            char* pathToDotProject = (char*)(malloc(sizeof(char) * (strlen(pathToProj) + 1 + strlen(DOT_PROJECT))));
+            sprintf(pathToDotProject, "%s/%s", pathToProj, DOT_PROJECT);
+            //printf("%s\n", pathToDotProject);
+
+            long int manifestFileSize = findFileSize(pathToCVManifest);
+            int manifestFD = open(pathToCVManifest, O_RDONLY, 00777);
+            Manifest* projManifestList = readManifest(manifestFD);
+            close(manifestFD);
+
+            int dotProjectFD = open(pathToDotProject, O_CREAT | O_WRONLY, 00777);
+            ManifestEntryNode* curr = projManifestList->head;
+            while(curr != NULL)
+            {
+                char* currFile = curr->filePath;
+                char* currFileName = strrchr(currFile, '/') + 1;
+                long int currFileSize = findFileSize(currFile);
+                char cfSize[11];
+                memset(cfSize, '\0', 11 * sizeof(char));
+                sprintf(cfSize, "%ld", currFileSize);
+                int fileFD = open(currFile, O_RDONLY, 00777);
+
+                char* currFileContent = (char*)(malloc(sizeof(char) * currFileSize));
+                read(fileFD, currFileContent, currFileSize);
+                close(fileFD);
+
+                write(dotProjectFD, currFileName, strlen(currFileName));
+                write(dotProjectFD, ":", 1);
+
+                write(dotProjectFD, cfSize, strlen(cfSize));
+                write(dotProjectFD, ":", 1);
+
+                write(dotProjectFD, currFileContent, strlen(currFileContent));
+                write(dotProjectFD, "\n", 1);
+
+                curr = curr->next;
+            }
+            close(dotProjectFD);
+            
+            write(sock, "sendProject:", strlen("sendProject:"));
+            write(sock, "2:", 2);
+            writeFToSocket(sock, projName, ".Manifest");
+            write(sock, ":", 1);
+            compressProject(sock, pathToDotProject, pathToProj);
+
+            /*
             // get its manifest contents and all its contents compressed
             int manifestFD = open(pathToCVManifest, O_RDONLY, 00777);
             Manifest* projManifest = readManifest(manifestFD);
@@ -297,7 +339,7 @@ void serverCheckout(char* projName, int sock)
                 currEntry = currEntry->next;
             }
 
-			//write(sock, "sendProject:", strlen("sendProject:"));
+			//write(sock, "sendProject:", strlen("sendProject:"));*/
 
 
 			

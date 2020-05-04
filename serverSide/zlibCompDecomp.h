@@ -188,7 +188,7 @@ static void decompressProject(int sockFd, char *projectFile, char *baseDir) {
 	//createDirStructureIfNeeded(path);
 	int writeFd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 00777);
 	
-	// first right encrypted data to a temp file.
+	// first write encrypted data to a temp file.
 	writeNBytesToFile(numBytes, sockFd, writeFd); 
 	close(writeFd);
 	
@@ -212,23 +212,23 @@ static void compressProject(int sockFd, char *filePath, char *baseDir) {
 	char *pathToCompressedFile = malloc(sizeof(char) * (strlen(baseDir) + strlen("/.projectC")));		
 	
 	// convert .project file to zlib compressed.
-	char numBytesBuffer[11];
 	sprintf(pathToCompressedFile, "%s/.projectC", baseDir);
 	
 	compressFile(filePath, pathToCompressedFile);
-	long int numBytes = findFileSize(pathToCompressedFile);
+	long int compressedFileSize = findFileSize(pathToCompressedFile);
+    long int compressedFileNameLength = strlen(".projectC");
 	
 	int readFd = open(pathToCompressedFile, O_RDONLY, 00777);
 	
-	sprintf(numBytesBuffer, "%ld:", numBytes);
-	write(sockFd, numBytesBuffer, strlen(numBytesBuffer));
+    char* fileInfo = (char*)(malloc(sizeof(char) * (11 + 1 + strlen(".projectC") + 1 + 11)));
+	sprintf(fileInfo, "%ld:.projectC:%ld:", compressedFileNameLength, compressedFileSize);
+	write(sockFd, fileInfo, strlen(fileInfo));
 	
 	// now write compressed data to socket.
-	writeNBytesToFile(numBytes, readFd, sockFd);
-    write(sockFd, ":", 1);
+	writeNBytesToFile(compressedFileSize, readFd, sockFd);
 	
 	close(readFd);
-	unlink(pathToCompressedFile);
+	//unlink(pathToCompressedFile);
 	free(pathToCompressedFile);
 }
 

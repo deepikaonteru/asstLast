@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <string.h> 
 #include "socketBufferC.h"
+#include "zlibCompDecomp.h"
 char CLIENT_REPOS[] = "./clientRepos";
 char DOT_UPDATE[] = ".Update";
 char DOT_MANIFEST[] = ".Manifest";
@@ -191,7 +192,7 @@ int projExistsInClient(char *projName) {
 	
 	// Check if project exists
 	if(DirExistsCheck(projName) == 0) {
-		printf("Error: The project does not exist.\n");
+		//printf("Error: The project does not exist.\n");
 		return 0;
 	}
 	
@@ -205,17 +206,6 @@ int projExistsInClient(char *projName) {
 		return 0;
 	}
 	return 1;
-}
-
-long int findFileSize(char* filePath)
-{
-    struct stat buffer;
-    int status = stat(filePath, &buffer);
-    if(status == 0)
-    {
-        return buffer.st_size;
-    }
-    return -1;
 }
 
 char* hashFile(char* pathToFile)
@@ -893,8 +883,8 @@ void checkout(char* projName)
         //if it does, then end the command, don't even contact server
     char* pathToProject = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName))));
     sprintf(pathToProject, "%s/%s", CLIENT_REPOS, projName);
-    if(projExistsInClient(pathToProject) == 0) {
-        printf("Error: Project does not exist in local repo.\n");
+    if(projExistsInClient(pathToProject) != 0) {
+        printf("Error: Project exists in local repo.\n");
         free(pathToProject);
         return;
     }
@@ -979,7 +969,7 @@ void checkout(char* projName)
     send(sock, fullCmd, strlen(fullCmd), 0);
 
     //Client is expecting a message that sends the project over or a failed message
-    //sendProject:<numFilesBeingSent>:<file1Name>:<file1Size>:<file1Content>:<file2Name>:...
+    //sendProject:<numFilesBeingSent>:<lenFile1Name>:<file1Name>:<file1Size>:<file1Content>:<lenFile2Name>:<file2Name>:<file2Size>:<file2Content>
     SocketBuffer *socketBuffer = createBuffer();
 
     readTillDelimiter(socketBuffer, sock, ':');
@@ -989,28 +979,35 @@ void checkout(char* projName)
     //if sendProject, then we want to read n times, where n is the number of files sent by server
     if(strcmp(responseCode, "sendProject") == 0)
     {
+        char* pathToProj = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + 1 + strlen(projName))));
+        sprintf(pathToProj, "%s/%s", CLIENT_REPOS, projName);
+        int projDIR = mkdir(pathToProj, 00777);
+
         readTillDelimiter(socketBuffer, sock, ':');
-        char* numFiles = readAllBuffer(socketBuffer);
-        int n = atoi(numFiles);
-        printf("%d\n", n);
-        int i;
-        for(i = 0; i < n; i ++)
-        {
-            readTillDelimiter(socketBuffer, sock, ':');
-            char* fileName = readAllBuffer(socketBuffer);
-            printf("%s\n", fileName);
+        char* numFilesSent = readAllBuffer(socketBuffer);
 
-            readTillDelimiter(socketBuffer, sock, ':');
-            char* fileSize = readAllBuffer(socketBuffer);
-            long int fSize = atol(fileSize);
-            printf("%ld\n", fSize);
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* lenManifestName = readAllBuffer(socketBuffer);
 
-            readTillDelimiter(socketBuffer, sock, ':');
-            char* compressedFileContent = readAllBuffer(socketBuffer);
-            printf("%s\n", compressedFileContent);
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* manifestName = readAllBuffer(socketBuffer);
 
-            readTillDelimiter(socketBuffer, sock, ':');
-        }
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* manifestSize = readAllBuffer(socketBuffer);
+        long int mSize = atol(manifestSize);
+
+        readNBytes(socketBuffer, sock, mSize);
+        char* manifestContent = readAllBuffer(socketBuffer);
+        char* pathToManifest = (char*)(malloc(sizeof(char) * (strlen(pathToProj) + 1 + strlen(DOT_MANIFEST))));
+        sprintf(pathToManifest, "%s/%s", pathToProj, DOT_MANIFEST);
+        int manifestFD = open(pathToManifest, O_CREAT | O_WRONLY, 00777);
+        write(manifestFD, manifestContent, mSize);
+        close(manifestFD);
+
+        char* pathToDotProject = (char*)(malloc(sizeof(char) * (strlen(pathToProj) + strlen("/.project"))));
+        sprintf(pathToDotProject, "%s/.project", pathToProj);
+        decompressProject(sock, pathToDotProject, pathToProj);
+
 
     }
     //if not sendProject, FAIL
