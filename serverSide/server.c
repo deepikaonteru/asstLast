@@ -239,12 +239,60 @@ void serverCheckout(char* projName, int sock)
     strcpy(pathToProj, SERVER_REPOS);
     strcat(pathToProj, "/");
     strcat(pathToProj, projName);
-		
+
 	if(!ProjInServerRepos(projName)) {
 		writeErrorToSocket(sock, "Project does not exist.");
-			
-	} 
+
+	}
     else {
+
+         // get current version from readCurrentVersion()
+        char* cv = readCurrentVersion(projName);
+
+        // make a path to that current version folder for that project
+        char* pathToCVManifest = (char*)(malloc(sizeof(char) * (strlen(pathToProj) + 1 + strlen(cv) + strlen("/.Manifest"))));
+        sprintf(pathToCVManifest, "%s/%s/.Manifest", pathToProj, cv);
+
+        long int manifestFileSize = findFileSize(pathToCVManifest);
+        int manifestFD = open(pathToCVManifest, O_RDONLY, 00777);
+        Manifest* projManifestList = readManifest(manifestFD);
+        close(manifestFD);
+
+        write(sockfd, "sendProject", strlen("sendProject:"));
+
+        //we want to compress everything now
+
+        char* pathToDotProject = (char*)(malloc(sizeof(char) * (strlen(pathToProj) + 1 + strlen(DOT_PROJECT))));
+        sprintf(pathToDotProject, "%s/%s", pathToProj, DOT_PROJECT);
+        //printf("%s\n", pathToDotProject);
+
+        int projectFD = open(pathToDotProject, O_CREAT | O_WRONLY | O_TRUNC, 0777);
+
+        // Add 1 to include manifest file
+        char[11] = nfBuff;
+		sprintf(nfBuff, "%d:", 1 + projManifestList->numFiles);
+		write(projectFD, nfBuff, strlen(nfBuff));
+
+        writeFToSocket(projectFD, projName, DOT_MANIFEST);
+
+        ManifestEntryNode* curr = projManifestList->head;
+
+        while(curr!=NULL) {
+            writeFileToSocket(projectFD, projName, curr->filePath);
+			curr = curr->next;
+        }
+
+        close(projectFD);
+
+        compressProject(sock, pathToDotProject, pathToProj);
+
+        unlink(pathToDotProject);
+        free(pathToDotProject);
+
+
+
+
+        /*
         char* cv = readCurrentVersion(projName);
         char* pathToProjCV = (char*)(malloc(sizeof(char) * (strlen(pathToProj) + 1 + strlen(cv))));
         sprintf(pathToProjCV, "%s/%s", pathToProj, cv);
@@ -273,11 +321,14 @@ void serverCheckout(char* projName, int sock)
         char* sendSize = (char*)(malloc(sizeof(char) * strlen(sTarFile) + 1));
         sprintf(sendSize, "%s:", sTarFile);
         write(sock, sendSize, strlen(sendSize));
-        
+
         readTillDelimiter(socketBuffer, sock, ':');
         char* clientResponse = readAllBuffer(socketBuffer);
 
         send(sock, tarBuffer, sizeTarFile, 0);
+
+        */
+
         //send(sock, tarBuffer, sizeTarFile, 0);
           //if it DOES exist...
             //need a way to compress the entire project folder for the latest version
@@ -334,7 +385,7 @@ void serverCheckout(char* projName, int sock)
                 curr = curr->next;
             }
             close(dotProjectFD);
-            
+
             write(sock, "sendProject:", strlen("sendProject:"));
             write(sock, "2:", 2);
             writeFToSocket(sock, projName, ".Manifest");
@@ -377,10 +428,10 @@ void serverCheckout(char* projName, int sock)
 
 			//write(sock, "sendProject:", strlen("sendProject:"));*/
 
-			
+
 
 	}
-    
+
 
 }
 

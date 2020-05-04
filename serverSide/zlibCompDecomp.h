@@ -180,28 +180,30 @@ static void decompressProject(int sockFd, char *projectFile, char *baseDir) {
 	readTillDelimiter(socketBuffer, sockFd, ':');
 	char *numBytesStr = readAllBuffer(socketBuffer);
 	long numBytes = atol(numBytesStr);
-	
+
 	printf("Reading %ld bytes from socket\n", numBytes); fflush(stdout);
-	
-	char path[100];
-	//sprintf(path, "%s/tmp_res%lld_%d", baseDir);
-	//createDirStructureIfNeeded(path);
-	int writeFd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 00777);
-	
+
+    //baseDir: serverRepos/<projName>
+	char *pathToDecompressedFile = malloc(sizeof(char) * (strlen(baseDir) + strlen("/.projectC")));
+
+	// convert .project file to zlib compressed.
+	sprintf(pathToDecompressedFile, "%s/.projectD", baseDir);
+
+	int writeFd = open(pathToDecompressedFile, O_CREAT | O_WRONLY | O_TRUNC, 00777);
+
 	// first write encrypted data to a temp file.
-	writeNBytesToFile(numBytes, sockFd, writeFd); 
+	writeNBytesToFile(numBytes, sockFd, writeFd);
 	close(writeFd);
-	
+
 	// now unecrypt data from this file, and write to .project file.
-	decompressFile(path, projectFile);
-	
+	decompressFile(pathToDecompressedFile, projectFile);
+
 	// delete temp file.
-	unlink(path);
-	
+	unlink(pathToDecompressedFile);
+
 	free(numBytesStr);
 	freeSocketBuffer(socketBuffer);
 }
-
 
 
 // writes sent project in this format - <contentLen>:<compressed data>:...

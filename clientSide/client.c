@@ -1180,14 +1180,14 @@ void checkout(char* projName)
             //could use system(tar...) to compress whole folder on serverSide, then...
             //send that compressed file over to clientSide and decompress it
             //extract all files, rename the folder from <versionNumber> to <projectName>
-    
-    // Request to get project from server 
+
+    // Request to get project from server
     //<lengthAfterFirstColon>:co:<projName>
     char* baseCmd = (char*)(malloc((strlen("co:") + strlen(projName) + 1) * sizeof(char)));
     strcpy(baseCmd, "co:");
     strcat(baseCmd, projName);
     strcat(baseCmd, "\0");
-    
+
     int numBytesToSend = strlen(baseCmd);
     char numBytesBuffer[10];
     memset(numBytesBuffer, '\0', 10 * sizeof(char));
@@ -1201,19 +1201,49 @@ void checkout(char* projName)
     //printf("%s\n", fullCmd);
 
     free(baseCmd);
-    
+
     send(sock, fullCmd, strlen(fullCmd), 0);
 
     //Client is expecting a message that sends the project over or a failed message
     //sendProject:<numFilesBeingSent>:<lenFile1Name>:<file1Name>:<file1Size>:<file1Content>:<lenFile2Name>:<file2Name>:<file2Size>:<file2Content>
     SocketBuffer *socketBuffer = createBuffer();
 
+    if(strcmp(responseCode, "sendProject") == 0)
+    {
+        // comes in compressed form
+        char* pathToDotProject = (char*)(malloc(sizeof(char) * (strlen(pathToProject) + 1 + strlen(DOT_PROJECT))));
+        sprintf(pathToDotProject, "%s/%s", pathToProject, DOT_PROJECT);
+
+        decompressProject(sock, pathToDotProject, pathToProject);
+
+        // open a FD
+        int projectFd = open(pathToDotProject, O_RDONLY, 00777);
+
+        // write into it
+
+        readTillDelimiter(socketBuffer, projectFd, ':');
+		char *numFilesStr = readAllBuffer(socketBuffer);
+		long numFiles = atol(numFilesStr);
+		free(numFilesStr);
+
+		// Now read N files, and save them
+		while(numFiles-- > 0) {
+			writeFileFromSocket(projectFd, project);
+		}
+
+        close(projectFd);
+		unlink(pathToDotProject);
+		free(pathToDotProject);
+		printf("Done.\n");
+
+    }
     //readTillDelimiter(socketBuffer, sock, ':');
     //char* responseCode = readAllBuffer(socketBuffer);
     //printf("%s\n", responseCode);
 
+    /*
     char tarBuffer[1024] = {0};
-    
+
     readTillDelimiter(socketBuffer, sock, ':');
     char* tarFileSize = readAllBuffer(socketBuffer);
     long tfSize = atol(tarFileSize);
@@ -1235,7 +1265,7 @@ void checkout(char* projName)
         printf("Wrote: %d bytes\n", numBytesWritten);
         close(tarFD);
     }
-
+    */
     //if sendProject, then we want to read n times, where n is the number of files sent by server
     /*
     if(strcmp(responseCode, "sendProject") == 0)
@@ -1246,7 +1276,7 @@ void checkout(char* projName)
 
         readNBytes(socketBuffer, sock, tfSize);
         char* tarBuffer = readAllBuffer(socketBuffer);
-        
+
         char* pathToTar = (char*)(malloc(sizeof(char) * strlen(CLIENT_REPOS) + 1 + strlen(projName) + strlen(".tar")));
         sprintf(pathToTar, "%s/%s.tar", CLIENT_REPOS, projName);
         int tarFD = open(pathToTar, O_CREAT | O_WRONLY, 00777);
@@ -1286,7 +1316,7 @@ void checkout(char* projName)
     /*
     else
     {
-		printf("Could not checkout project.\n");		
+		printf("Could not checkout project.\n");
 		readTillDelimiter(socketBuffer, sock, ':');
 		char *reason = readAllBuffer(socketBuffer);
 		printf("Reason: %s\n", reason);
@@ -1294,6 +1324,7 @@ void checkout(char* projName)
     }*/
 
 }
+
 void getCurrentVersion(char* projName)
 {
     int sock, port, numBytes;
