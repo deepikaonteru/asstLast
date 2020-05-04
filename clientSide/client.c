@@ -437,6 +437,10 @@ void commit(char* projName)
         readTillDelimiter(socketBuffer, sock, ':');
         char* ID = readAllBuffer(socketBuffer);
         id = atol(ID);
+        char* pathToIDFile = (char*)(malloc(sizeof(char) * strlen("./.ID")));
+        strcpy(pathToIDFile, "./.ID");
+        int idFD = open(pathToIDFile, O_CREAT| O_WRONLY, 00777);
+        write(idFD, ID, strlen(ID));
         //printf("%s\n", ID);
 
         Manifest* clientManifestList = readManifestInClientSide(projName);
@@ -617,6 +621,114 @@ void commit(char* projName)
         }
     }
 }
+
+void push(char* projName)
+{
+    //Build path to project
+    char* pathToProject = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName))));
+    sprintf(pathToProject, "%s/%s", CLIENT_REPOS, projName);
+
+    // Check if project exists
+	if(projExistsInClient(pathToProject) == 0) {
+		printf("Error: Project does not exist in local repo.\n");
+        free(pathToProject);
+		return;
+	}
+    //Check if commit exists
+    else
+    {
+        char ID[11];
+        memset(ID, '\0', 11 * sizeof(char));
+        sprintf(ID, "%ld", id);
+        char* pathToCommit = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + 1 + strlen(projName) + 1 +strlen(DOT_COMMIT) + strlen(ID))));
+        sprintf(pathToCommit, "%s/%s/%s%s", CLIENT_REPOS, projName, DOT_COMMIT, ID);
+        //printf("%s\n", pathToCommit);
+        int fd = open(pathToCommit, O_RDONLY, 00777);
+        if(fd == -1) { //if file does not exist
+            printf("Error: Missing .Commit file.\n");
+            close(fd);
+            return;
+        }
+        close(fd);
+        free(pathToCommit);
+        free(pathToProject);
+    }
+    
+    int sock, port, numBytes;
+    struct sockaddr_in serverAddr;
+    struct hostent* server;
+
+    //read from .configure file to obtain IP and port#
+    int fd = open("./.configure", O_RDONLY);
+        if(fd == -1) { //if file does not exist
+        printf("Error: missing .configure\n");
+        close(fd);
+        return;
+    }
+
+    fd = open("./.configure", O_RDONLY);
+    port = getPortNum(fd);
+    close(fd);
+
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if(sock < 0)
+    {
+        printf("Error: socket failed to open.\n");
+        return;
+    }
+
+    fd = open("./.configure", O_RDONLY);
+    char hostName[256];
+    getHostName(fd, hostName);
+    server = gethostbyname(hostName);
+    if(server == NULL)
+    {
+        printf("Error: no such host.\n");
+        return;
+    }
+
+    bzero((char*)(&serverAddr), sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    bcopy((char*)(server->h_addr), (char*)(&serverAddr.sin_addr.s_addr), server->h_length);
+    serverAddr.sin_port = htons(port);
+
+    if(connect(sock, (struct sockaddr*)(&serverAddr), sizeof(serverAddr)) < 0)
+    {
+        printf("Error: could not connect.\n");
+        return;
+    }
+
+    //printf("Sending Project: %s to destroy\n", projName);
+
+    // <lenCMD>:<push>:<projName>
+    char ID[11];
+    memset(ID, '\0', 11 * sizeof(char));
+    sprintf(ID, "%ld", id);
+    char* baseCmd = (char*)(malloc((strlen("push:") + strlen(projName) + 1 + strlen(ID) + 1) * sizeof(char)));
+    strcpy(baseCmd, "push:");
+    strcat(baseCmd, ID);
+    strcat(baseCmd, ":");
+    strcat(baseCmd, projName);
+    strcat(baseCmd, "\0");
+    
+    int numBytesToSend = strlen(baseCmd);
+    char numBytesBuffer[10];
+    memset(numBytesBuffer, '\0', 10 * sizeof(char));
+    sprintf(numBytesBuffer, "%d", numBytesToSend);
+
+    char* fullCmd = (char*)(malloc((strlen(numBytesBuffer) + 1 + strlen(baseCmd) + 1) * sizeof(char)));
+    strcpy(fullCmd, numBytesBuffer);
+    strcat(fullCmd, ":");
+    strcat(fullCmd, baseCmd);
+    //printf("%s\n", fullCmd);
+
+    free(baseCmd);
+    
+    send(sock, fullCmd, strlen(fullCmd), 0);
+    free(fullCmd);  
+
+}
+
 // add an entry for the the file
 // to its client's .Manifest with a new version number and hashcode
 void addFile(char* projName, char* fileName)
@@ -972,13 +1084,50 @@ void checkout(char* projName)
     //sendProject:<numFilesBeingSent>:<lenFile1Name>:<file1Name>:<file1Size>:<file1Content>:<lenFile2Name>:<file2Name>:<file2Size>:<file2Content>
     SocketBuffer *socketBuffer = createBuffer();
 
-    readTillDelimiter(socketBuffer, sock, ':');
-    char* responseCode = readAllBuffer(socketBuffer);
+    //readTillDelimiter(socketBuffer, sock, ':');
+    //char* responseCode = readAllBuffer(socketBuffer);
     //printf("%s\n", responseCode);
 
+    char tarBuffer[1024] = {0};
+    
+    readTillDelimiter(socketBuffer, sock, ':');
+    char* tarFileSize = readAllBuffer(socketBuffer);
+    long tfSize = atol(tarFileSize);
+
+    send(sock, "ok:", strlen("ok:"), 0);
+
+    int numBytesReceived = read(sock, tarFileSize, tfSize);
+    printf("%d\n", tfSize);
+    printf("%d\n", numBytesReceived);
+
+    if(tfSize == numBytesReceived)
+    {
+        char* pathToTar = (char*)(malloc(sizeof(char) * strlen(CLIENT_REPOS) + 1 + strlen(projName) + strlen(".tar.gz")));
+        sprintf(pathToTar, "%s/%s.tar.gz", CLIENT_REPOS, projName);
+        printf("%s\n", pathToTar);
+
+        int tarFD = open(pathToTar, O_CREAT | O_WRONLY, 00777);
+        int numBytesWritten = write(tarFD, tarBuffer, numBytesReceived);
+        printf("Wrote: %d bytes\n", numBytesWritten);
+        close(tarFD);
+    }
+
     //if sendProject, then we want to read n times, where n is the number of files sent by server
+    /*
     if(strcmp(responseCode, "sendProject") == 0)
     {
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* tarFileSize = readAllBuffer(socketBuffer);
+        long tfSize = atol(tarFileSize);
+
+        readNBytes(socketBuffer, sock, tfSize);
+        char* tarBuffer = readAllBuffer(socketBuffer);
+        
+        char* pathToTar = (char*)(malloc(sizeof(char) * strlen(CLIENT_REPOS) + 1 + strlen(projName) + strlen(".tar")));
+        sprintf(pathToTar, "%s/%s.tar", CLIENT_REPOS, projName);
+        int tarFD = open(pathToTar, O_CREAT | O_WRONLY, 00777);
+        write(tarFD, tarBuffer, tfSize);
+        /*
         char* pathToProj = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + 1 + strlen(projName))));
         sprintf(pathToProj, "%s/%s", CLIENT_REPOS, projName);
         int projDIR = mkdir(pathToProj, 00777);
@@ -1007,15 +1156,18 @@ void checkout(char* projName)
         char* pathToDotProject = (char*)(malloc(sizeof(char) * (strlen(pathToProj) + strlen("/.project"))));
         sprintf(pathToDotProject, "%s/.project", pathToProj);
         decompressProject(sock, pathToDotProject, pathToProj);
+    }*/
 
-
-    }
     //if not sendProject, FAIL
+    /*
     else
     {
-        
-    }
-    
+		printf("Could not checkout project.\n");		
+		readTillDelimiter(socketBuffer, sock, ':');
+		char *reason = readAllBuffer(socketBuffer);
+		printf("Reason: %s\n", reason);
+		free(reason);
+    }*/
 
 }
 void getCurrentVersion(char* projName)
@@ -1267,6 +1419,22 @@ void create(char* projName)
 
 int main(int argc, char *argv[]) 
 { 
+    //check for ID and save it
+    int idFD = open("./.ID", O_RDONLY, 00777);
+    if(idFD == -1)
+    {
+        close(idFD);
+    }
+    else
+    {
+        char numID[11];
+        memset(numID, '\0', sizeof(char) * 11);
+        read(idFD, numID, 1);
+        id = atol(numID);
+        printf("ID: %ld\n", id);
+    }
+    
+
     //configure step
     if(strcmp(argv[1], "configure") == 0)
     {
@@ -1368,6 +1536,7 @@ int main(int argc, char *argv[])
     }
     else if(strcmp(argv[1], "push") == 0)
     {
+        push(argv[2]);
         //server builds this message to send to client
         //request:<numFilesNeededByServer>:<lengthFileOnePath>:<fileOnePath>:<lengthFileTwoPath>:<fileTwoPath>:...:<lengthFileNPath>:<fileNPath>
         

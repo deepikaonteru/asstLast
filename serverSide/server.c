@@ -243,13 +243,49 @@ void serverCheckout(char* projName, int sock)
 	if(!ProjInServerRepos(projName)) {
 		writeErrorToSocket(sock, "Project does not exist.");
 			
-	} else {
+	} 
+    else {
+        char* cv = readCurrentVersion(projName);
+        char* pathToProjCV = (char*)(malloc(sizeof(char) * (strlen(pathToProj) + 1 + strlen(cv))));
+        sprintf(pathToProjCV, "%s/%s", pathToProj, cv);
+        //printf("%s\n", pathToProjCV);
+
+        char* sysCMD = (char*)(malloc(sizeof(char) * (strlen("tar -zcvf ") + strlen(projName) + strlen(".tar.gz ") + strlen(pathToProjCV))));
+        sprintf(sysCMD, "tar -zcvf %s.tar.gz %s", projName, pathToProjCV);
+        //printf("%s\n", sysCMD);
+        system(sysCMD);
+
+        char* pathToTar = (char*)(malloc(sizeof(char) * (2 + strlen(projName) + strlen(".tar.gz"))));
+        sprintf(pathToTar, "./%s.tar.gz", projName);
+
+        long int sizeTarFile = findFileSize(pathToTar);
+        char sTarFile[11];
+        memset(sTarFile, '\0', 11 * sizeof(char));
+        sprintf(sTarFile, "%ld:", sizeTarFile);
+        SocketBuffer* socketBuffer = createBuffer();
+        int tarFD = open(pathToTar, O_RDONLY, 00777);
+        readNBytes(socketBuffer, tarFD, sizeTarFile);
+        char* tarBuffer = readAllBuffer(socketBuffer);
+        //printf("%s\n", tarBuffer);
+        //printf("%d\n", read(tarFD, tarContents, sizeTarFile));
+        //printf("%d\n", strlen(tarContents));
+        close(tarFD);
+        char* sendSize = (char*)(malloc(sizeof(char) * strlen(sTarFile) + 1));
+        sprintf(sendSize, "%s:", sTarFile);
+        write(sock, sendSize, strlen(sendSize));
+        
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* clientResponse = readAllBuffer(socketBuffer);
+
+        send(sock, tarBuffer, sizeTarFile, 0);
+        //send(sock, tarBuffer, sizeTarFile, 0);
           //if it DOES exist...
             //need a way to compress the entire project folder for the latest version
             //could use system(tar...) to compress whole folder on serverSide, then...
             //send that compressed file over to clientSide and decompress it
             //extract all files, rename the folder from <versionNumber> to <projectName>
 
+            /*
             // get current version from readCurrentVersion()
             char* cv = readCurrentVersion(projName);
 
@@ -341,7 +377,6 @@ void serverCheckout(char* projName, int sock)
 
 			//write(sock, "sendProject:", strlen("sendProject:"));*/
 
-
 			
 
 	}
@@ -425,6 +460,33 @@ void serverCommit(char* projName, int sock)
 	
 	freeSocketBuffer(socketBuffer);
 	free(responseCode);
+}
+
+void serverPush(char* projName, char ID, int sock)
+{
+    char* path = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
+    strcpy(path, SERVER_REPOS);
+    strcat(path, "/");
+    strcat(path, projName);
+
+    if(!ProjInServerRepos(projName)) {
+		writeErrorToSocket(sock, "Project does not exist.");		
+	}
+    else {
+        char* pathToCommit = (char*)(malloc(sizeof(char) * (strlen(path) + 1 + strlen(DOT_COMMITS) + 1 + strlen(".Commit") + strlen(&ID))));
+        sprintf(pathToCommit, "%s/%s/%s%c", path, DOT_COMMITS, ".Commit", ID);
+        printf("%s\n", pathToCommit);
+
+        /*
+        id ++;
+        write(sock, "sendfile:", strlen("sendfile:"));
+        write(sock, "1:", 2);
+        writeFToSocket(sock, projName, ".Manifest");
+        char ID[11];
+        memset(ID, '\0', 11);
+        sprintf(ID, "%ld:", id);
+        write(sock, ID, strlen(ID));*/
+	}
 }
 
 void serverCurrentVersion(char* projName, int sock)
@@ -632,6 +694,13 @@ int main(int argc, char *argv[])
                 {
                     char* projName = strchr(fullCmdBuf, ':') + 1;
                     serverCheckout(projName, newSocket);
+                }
+
+                if(strcmp(cmdBuf, "push") == 0)
+                {
+                    char* projName = strrchr(fullCmdBuf, ':') + 1;
+                    char* ID = strchr(fullCmdBuf, ':') + 1;
+                    serverPush(projName, ID, newSocket);
                 }
             }
         }
