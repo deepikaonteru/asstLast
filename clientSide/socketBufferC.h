@@ -312,7 +312,7 @@ static int compareManifests(Manifest* serverMan, Manifest* clientMan, char* path
 	ManifestEntryNode *curr = serverMan->head;
 	while(curr != NULL) {
 		// Search client file in Server
-		clientEntryNode = findNodeByFilePath(serverMan, curr->filePath);
+		clientEntryNode = findNodeByFilePath(clientMan, curr->filePath);
 		char* liveHash;
 
 		if(clientEntryNode == NULL)
@@ -329,13 +329,13 @@ static int compareManifests(Manifest* serverMan, Manifest* clientMan, char* path
 			
 			printf("A %s\n", curr->filePath);
 		}
-		else if(strcmp(clientEntryNode->manifestCode, "N") == 0)
+		else if(strcmp(curr->manifestCode, "N") == 0)
 		{
 			//skip over this one
 			curr = curr->next;
 			continue;
 		}
-		else if(strcmp(clientEntryNode->manifestCode, "R") == 0)
+		else if(strcmp(curr->manifestCode, "R") == 0)
 		{
 			write(updateFD, "D:", 2);
 
@@ -349,7 +349,7 @@ static int compareManifests(Manifest* serverMan, Manifest* clientMan, char* path
 			
 			printf("D %s\n", curr->filePath);
 		}
-		else if(strcmp(clientEntryNode->manifestCode, "M") == 0)
+		else if(strcmp(curr->manifestCode, "M") == 0)
 		{
 			//get live hash
 			char* pathToFile = clientEntryNode->filePath;
@@ -358,6 +358,8 @@ static int compareManifests(Manifest* serverMan, Manifest* clientMan, char* path
 			//check if live hash is the same as client hash, if it is, increment curr and continue (treat as N)
 			if(strcmp(liveHash, clientEntryNode->fileHash) != 0)
 			{
+				printf("Live Hash: %s\n", liveHash);
+				printf("Hash in Client .Manifest: %s\n", clientEntryNode->fileHash);
 				//write this to .Conflict
 				write(conflictFD, "C:", 2);
 
@@ -395,9 +397,15 @@ static int compareManifests(Manifest* serverMan, Manifest* clientMan, char* path
 	if(conflictCount == 0)
 	{
 		close(conflictFD);
-		remove(conflictFD);
+		remove(pathToConflict);
 	}
-
+	else
+	{
+		printf("Error: Conflicts were found and must be resolved before project can be updated.\n");
+	}
+	close(conflictFD);
+	close(updateFD);
+	
 }
 
 

@@ -11,7 +11,7 @@
 #include <sys/stat.h>
 #include "socketBuffer.h"
 #include "zlibCompDecomp.h"
-char SERVER_REPOS[] = "./serverRepos";
+char SERVER_REPOS[] = "./serverSide/serverRepos";
 char DOT_VERSION[] = ".version";
 char DOT_HISTORY[] = ".history";
 char DOT_COMMITS[] = ".Commits";
@@ -493,9 +493,21 @@ void serverPush(char* projName, int sock)
 		writeErrorToSocket(sock, "Project does not exist.");		
 	}
     else {
+        SocketBuffer* socketBuffer = createBuffer();
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* ID = readAllBuffer(socketBuffer);
+        printf("Searching project for .Commit%s\n", ID);
+
+        char* pathToCommit = (char*)(malloc(sizeof(char) * (strlen(path) + 1 + strlen(DOT_COMMITS) + 1 + strlen(".Commit") + strlen(ID))));
+        sprintf(pathToCommit, "%s/%s/%s%s", path, DOT_COMMITS, ".Commit", ID);
+        int commitFD = open(pathToCommit, O_RDONLY, 00777);
+        if(commitFD == -1)
+        {
+            writeErrorToSocket(sock, ".Commit file does not exist in server.");
+            close(commitFD);
+            return;
+        }
         
-        //char* pathToCommit = (char*)(malloc(sizeof(char) * (strlen(path) + 1 + strlen(DOT_COMMITS) + 1 + strlen(".Commit") + strlen(&ID))));
-        //sprintf(pathToCommit, "%s/%s/%s%c", path, DOT_COMMITS, ".Commit", ID);
         //printf("%s\n", pathToCommit);
 
         /*

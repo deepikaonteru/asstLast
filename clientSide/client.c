@@ -12,7 +12,7 @@
 #include <string.h> 
 #include "socketBufferC.h"
 #include "zlibCompDecomp.h"
-char CLIENT_REPOS[] = "./clientRepos";
+char CLIENT_REPOS[] = "./clientSide/clientRepos";
 char DOT_UPDATE[] = ".Update";
 char DOT_MANIFEST[] = ".Manifest";
 char DOT_CONFLICT[] = ".Conflict";
@@ -584,6 +584,15 @@ void commit(char* projName)
             free(commitName);
         }
     }
+    else
+    {
+        printf("Project could not be committed.\n");		
+        readTillDelimiter(socketBuffer, sock, ':');
+        char *reason = readAllBuffer(socketBuffer);
+        printf("Reason: %s\n", reason);
+        free(reason);
+    }
+    
 }
 
 
@@ -707,11 +716,20 @@ void update(char* projName)
         Manifest* localManifestList = readManifest(locManifestFd);
         close(locManifestFd);
 
-        // Compare serverManifestList and localManifestList
-
         char* pathToUpdate = (char*)(malloc(sizeof(char) * (strlen(pathToProject) + 1 + strlen(DOT_UPDATE))));
         sprintf(pathToUpdate, "%s/%s", pathToProject, DOT_UPDATE);
-        int updateFD = open(pathToUpdate, O_CREAT | O_WRONLY | O_TRUNC, 00777);
+        int updateFD = open(pathToUpdate, O_CREAT | O_WRONLY, 00777);
+
+        if(localManifestList->versionNum == serverManifestList->versionNum)
+        {
+            printf("Up to date!\n");
+            close(updateFD);
+            char* pathToConflict = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + 1 + strlen(projName) + 1 + strlen(DOT_CONFLICT))));
+            remove(pathToConflict);
+            return;
+        }
+
+        // Compare serverManifestList and localManifestList
         compareManifests(serverManifestList, localManifestList, pathToProject, updateFD);
     }
     else {
@@ -722,11 +740,6 @@ void update(char* projName)
         printf("Reason: %s\n", reason);
         free(reason);
 	}
-
-
-
-   
-
 }
 
 void push(char* projName)
@@ -832,7 +845,10 @@ void push(char* projName)
 
     char ID[11];
     memset(ID, '\0', 11 * sizeof(char));
-    sprintf(ID, "%ld", id);
+    sprintf(ID, "%ld:", id);
+    send(sock, ID, strlen(ID), 0);
+
+    
 
 }
 
@@ -980,6 +996,7 @@ void removeFile(char* projName, char* fileName)
         ManifestEntryNode* entry = findNodeByFilePath(manifestList, pathToFile);
         if(entry == NULL) //if there's no such match, then there's nothing to remove
         {
+            printf("%s\n", pathToFile);
             printf("Error: file is not in .Manifest.\n");
             return;
         }
