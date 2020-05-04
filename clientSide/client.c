@@ -622,6 +622,152 @@ void commit(char* projName)
     }
 }
 
+
+void update(char* projName)
+{
+     //Build path to project
+    char* pathToProject = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName))));
+    sprintf(pathToProject, "%s/%s", CLIENT_REPOS, projName);
+
+    // Check if project exists
+	if(projExistsInClient(pathToProject) == 0) {
+		printf("Error: Project does not exist in local repo.\n");
+        free(pathToProject);
+		return;
+	}
+
+    int sock, port, numBytes;
+    struct sockaddr_in serverAddr;
+    struct hostent* server;
+
+    //read from .configure file to obtain IP and port#
+    int fd = open("./.configure", O_RDONLY);
+    if(fd == -1) { //if file does not exist
+        printf("Error: missing .configure\n");
+        close(fd);
+        return;
+	}
+
+    fd = open("./.configure", O_RDONLY);
+    port = getPortNum(fd);
+    close(fd);
+
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if(sock < 0)
+    {
+        printf("Error: socket failed to open.\n");
+        return;
+    }
+
+    fd = open("./.configure", O_RDONLY);
+    char hostName[256];
+    getHostName(fd, hostName);
+    server = gethostbyname(hostName);
+    if(server == NULL)
+    {
+        printf("Error: no such host.\n");
+        return;
+    }
+
+    bzero((char*)(&serverAddr), sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    bcopy((char*)(server->h_addr), (char*)(&serverAddr.sin_addr.s_addr), server->h_length);
+    serverAddr.sin_port = htons(port);
+
+    if(connect(sock, (struct sockaddr*)(&serverAddr), sizeof(serverAddr)) < 0)
+    {
+        printf("Error: could not connect.\n");
+        return;
+    }
+
+    // Request server for .Manifest for project
+	// upd:<projName>
+   //<lengthAfterFirstColon>:cv:<projectName>
+    char* baseCmd = (char*)(malloc((strlen("upd:") + strlen(projName) + 1) * sizeof(char)));
+    strcpy(baseCmd, "upd:");
+    strcat(baseCmd, projName);
+    strcat(baseCmd, "\0");
+    
+    int numBytesToSend = strlen(baseCmd);
+    char numBytesBuffer[10];
+    memset(numBytesBuffer, '\0', 10 * sizeof(char));
+    sprintf(numBytesBuffer, "%d", numBytesToSend);
+
+    char* fullCmd = (char*)(malloc((strlen(numBytesBuffer) + 1 + strlen(baseCmd) + 1) * sizeof(char)));
+    strcpy(fullCmd, numBytesBuffer);
+    strcat(fullCmd, ":");
+    strcat(fullCmd, baseCmd);
+    strcat(fullCmd, "\0");
+    //printf("%s\n", fullCmd);
+
+    free(baseCmd);
+    
+    send(sock, fullCmd, strlen(fullCmd), 0);
+
+    // server sends back 
+    // sendfile:<numFiles>:<ManifestNameLen>:<manifest name>:<numBytesOfContent>:<contents>
+	// OR "failed:<fail Reason>:"
+ 
+    SocketBuffer *socketBuffer = createBuffer();
+
+	readTillDelimiter(socketBuffer, sock, ':');
+	char *responseCode = readAllBuffer(socketBuffer);
+	
+	if(strcmp(responseCode, "sendfile") == 0) {	
+		
+        //The client should output a list of all
+        //files under the project name, along with their version number (i.e., number of updates).
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* numFiles = readAllBuffer(socketBuffer);
+        int nF = atoi(numFiles);
+
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* lenExt = readAllBuffer(socketBuffer);
+        long lExt = atol(lenExt);
+
+        readNBytes(socketBuffer, sock, lExt + 1);
+        char* ext = readAllBuffer(socketBuffer);
+        
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* numBytesContent = readAllBuffer(socketBuffer);
+        long nBytesContent = atol(numBytesContent);
+        
+        // LL of server manifest
+        Manifest* serverManifestList = readManifest(sock);
+
+        // Now get local manifest
+        char* pathToLocManifest = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + 1 + strlen(DOT_MANIFEST))));
+        sprintf(pathToLocManifest, "%s/%s/%s", CLIENT_REPOS, projName, DOT_MANIFEST);
+
+        int locManifestFd = open(pathToLocManifest, O_RDONLY, 00777);
+        Manifest* localManifestList = readManifest(sock);
+        close(locManifestFd);
+
+        // Compare serverManifestList and localManifestList
+
+        int updateFD = open(path, O_CREAT | O_WRONLY | O_TRUNC, 00777);
+        
+
+        
+
+
+
+    }
+    else {
+        // failed to update
+        printf("Project could not be updated.\n");		
+        readTillDelimiter(socketBuffer, sock, ':');
+        char *reason = readAllBuffer(socketBuffer);
+        printf("Reason: %s\n", reason);
+        free(reason);
+	}
+
+
+
+   
+
+}
+
 void push(char* projName)
 {
     //Build path to project
@@ -1483,6 +1629,10 @@ int main(int argc, char *argv[])
     else if(strcmp(argv[1], "remove") == 0)
     {
         removeFile(argv[2], argv[3]);
+    }
+     else if(strcmp(argv[1], "update") == 0)
+    {
+        update(argv[2]);
     }
     else if(strcmp(argv[1], "checkout") == 0)
     {

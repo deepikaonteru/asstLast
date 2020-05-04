@@ -384,6 +384,30 @@ void serverCheckout(char* projName, int sock)
 
 }
 
+void serverUpdate(char* projName, int sock)
+{
+    char* path = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
+    strcpy(path, SERVER_REPOS);
+    strcat(path, "/");
+    strcat(path, projName);
+		
+	if(!ProjInServerRepos(projName)) {
+		writeErrorToSocket(sock, "Project does not exist.");
+			
+	} else {
+		// send manifest file back
+        id ++;
+		write(sock, "sendfile:", strlen("sendfile:"));
+		write(sock, "1:", 2);
+		writeFToSocket(sock, projName, ".Manifest");
+        char ID[11];
+        memset(ID, '\0', 11);
+        sprintf(ID, "%ld:", id);
+        write(sock, ID, strlen(ID));
+	}
+
+    
+}
 void serverCommit(char* projName, int sock)
 {
     char* path = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
@@ -694,6 +718,12 @@ int main(int argc, char *argv[])
                 {
                     char* projName = strchr(fullCmdBuf, ':') + 1;
                     serverCheckout(projName, newSocket);
+                }
+
+                if(strcmp(cmdBuf, "upd") == 0)
+                {
+                    char* projName = strchr(fullCmdBuf, ':') + 1;
+                    serverUpdate(projName, newSocket);
                 }
 
                 if(strcmp(cmdBuf, "push") == 0)

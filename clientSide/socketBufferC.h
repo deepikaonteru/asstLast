@@ -260,6 +260,19 @@ static void writeToManifest(int manifestFD, Manifest* manifestList)
 
 }
 
+static int compareManifests(Manifest* serverMan, Manifest* clientMan, int updateFD) {
+
+	ManifestEntryNode* serverEntryNode;
+	ManifestEntryNode *clientEntryNode = client->head;
+	while(clientEntryNode != NULL) {
+		// Search client file in Server
+		serverEntryNode = findNodeByFilePath(server, clientEntryNode->filePath);
+
+	}
+
+}
+
+
 static void freeManifestEntryNodes(Manifest* manifestList)
 {
 	ManifestEntryNode* tmp;
