@@ -30,6 +30,47 @@ typedef struct SocketBuffer {
 	SocketNode *tail;
 } SocketBuffer;
 
+static char* hashFile(char* pathToFile)
+{
+	long sizeOfFile = 0;
+	struct stat buffer;
+	int status = stat(pathToFile, &buffer);
+	// if permission available
+	if(status == 0) {
+		sizeOfFile = buffer.st_size;
+	}
+    //printf("%ld\n", sizeOfFile);
+
+    //initialize a buffer, set it equal to file content
+    char* contentBuffer = (char*)(malloc(sizeof(char) * sizeOfFile));
+    memset(contentBuffer, '\0', sizeOfFile);
+    int fileFD = open(pathToFile, O_RDONLY, 00777);
+    int bytesReadFromFile = read(fileFD, contentBuffer, sizeof(char) * sizeOfFile);
+    close(fileFD);
+    //printf("%s\n", contentBuffer);
+
+    //hash this buffer
+    unsigned char hash[MD5_DIGEST_LENGTH];
+    MD5(contentBuffer, strlen(contentBuffer), hash);
+    /*
+    int i;
+    for(i = 0; i < MD5_DIGEST_LENGTH; i++)
+        printf("%02x", hash[i]);
+    printf("\n");*/
+    free(contentBuffer);
+
+    //convert hash into hex format to save to manifestEntryNode
+    char* strHash = (char*)(malloc(sizeof(char) * (MD5_DIGEST_LENGTH * 2 + 1)));
+    int i;
+    for(i = 0; i < MD5_DIGEST_LENGTH; i ++)
+    {
+        sprintf(strHash + 2 * i, "%02x", hash[i]);
+    }
+    //printf("%s\n", strHash);
+
+    return strHash;
+}
+
 static void addCharToBuffer(SocketBuffer *socketBuffer, char c) {
 	SocketNode *node = malloc(sizeof(SocketNode));
 	node->c = c;
@@ -260,14 +301,101 @@ static void writeToManifest(int manifestFD, Manifest* manifestList)
 
 }
 
-static int compareManifests(Manifest* serverMan, Manifest* clientMan, int updateFD) {
+static int compareManifests(Manifest* serverMan, Manifest* clientMan, char* pathToProj, int updateFD) {
 
-	ManifestEntryNode* serverEntryNode;
-	ManifestEntryNode *clientEntryNode = client->head;
-	while(clientEntryNode != NULL) {
+	char* pathToConflict = (char*)(malloc(sizeof(char) * (strlen(pathToProj) + strlen("/.Conflict"))));
+	sprintf(pathToConflict, "%s/%s", pathToProj, ".Conflict");
+	int conflictFD = open(pathToConflict, O_CREAT | O_WRONLY, 00777);
+	int conflictCount = 0;
+
+	ManifestEntryNode* clientEntryNode;
+	ManifestEntryNode *curr = serverMan->head;
+	while(curr != NULL) {
 		// Search client file in Server
-		serverEntryNode = findNodeByFilePath(server, clientEntryNode->filePath);
+		clientEntryNode = findNodeByFilePath(serverMan, curr->filePath);
+		char* liveHash;
 
+		if(clientEntryNode == NULL)
+		{
+			write(updateFD, "A:", 2);
+
+			write(updateFD, curr->filePath, strlen(curr->filePath));
+			write(updateFD, ":", 1);
+
+			write(updateFD, curr->versionNum, strlen(curr->versionNum));
+			write(updateFD, ":", 1);
+
+			write(updateFD, curr->fileHash, strlen(curr->fileHash));
+			
+			printf("A %s\n", curr->filePath);
+		}
+		else if(strcmp(clientEntryNode->manifestCode, "N") == 0)
+		{
+			//skip over this one
+			curr = curr->next;
+			continue;
+		}
+		else if(strcmp(clientEntryNode->manifestCode, "R") == 0)
+		{
+			write(updateFD, "D:", 2);
+
+			write(updateFD, curr->filePath, strlen(curr->filePath));
+			write(updateFD, ":", 1);
+
+			write(updateFD, curr->versionNum, strlen(curr->versionNum));
+			write(updateFD, ":", 1);
+
+			write(updateFD, curr->fileHash, strlen(curr->fileHash));
+			
+			printf("D %s\n", curr->filePath);
+		}
+		else if(strcmp(clientEntryNode->manifestCode, "M") == 0)
+		{
+			//get live hash
+			char* pathToFile = clientEntryNode->filePath;
+			liveHash = strdup(hashFile(pathToFile));
+
+			//check if live hash is the same as client hash, if it is, increment curr and continue (treat as N)
+			if(strcmp(liveHash, clientEntryNode->fileHash) != 0)
+			{
+				//write this to .Conflict
+				write(conflictFD, "C:", 2);
+
+				write(conflictFD, curr->filePath, strlen(curr->filePath));
+				write(conflictFD, ":", 1);
+
+				write(conflictFD, curr->versionNum, strlen(curr->versionNum));
+				write(conflictFD, ":", 1);
+
+				write(conflictFD, curr->fileHash, strlen(curr->fileHash));
+				
+				printf("C %s\n", curr->filePath);
+				conflictCount ++;
+			}
+			//if they do match...
+			else
+			{
+				write(updateFD, "M:", 2);
+
+				write(updateFD, curr->filePath, strlen(curr->filePath));
+				write(updateFD, ":", 1);
+
+				write(updateFD, curr->versionNum, strlen(curr->versionNum));
+				write(updateFD, ":", 1);
+
+				write(updateFD, curr->fileHash, strlen(curr->fileHash));
+			
+				printf("M %s\n", curr->filePath);
+			}
+
+		}
+
+		curr = curr->next;
+	}
+	if(conflictCount == 0)
+	{
+		close(conflictFD);
+		remove(conflictFD);
 	}
 
 }

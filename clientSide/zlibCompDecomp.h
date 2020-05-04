@@ -28,8 +28,7 @@ static void writeNBytesToFile(long nBytes, int sockToRead, int sockToWrite) {
     write(sockToWrite, readIn, nBytes);
 }
 
-long int findFileSize(char *fileName) {
-		
+static long int findFileSize(char *fileName) {
 	struct stat buffer;
 	int status = stat(fileName, &buffer);
 	// if permission available

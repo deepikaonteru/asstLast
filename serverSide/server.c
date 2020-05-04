@@ -400,10 +400,6 @@ void serverUpdate(char* projName, int sock)
 		write(sock, "sendfile:", strlen("sendfile:"));
 		write(sock, "1:", 2);
 		writeFToSocket(sock, projName, ".Manifest");
-        char ID[11];
-        memset(ID, '\0', 11);
-        sprintf(ID, "%ld:", id);
-        write(sock, ID, strlen(ID));
 	}
 
     
@@ -486,7 +482,7 @@ void serverCommit(char* projName, int sock)
 	free(responseCode);
 }
 
-void serverPush(char* projName, char ID, int sock)
+void serverPush(char* projName, int sock)
 {
     char* path = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
     strcpy(path, SERVER_REPOS);
@@ -497,9 +493,10 @@ void serverPush(char* projName, char ID, int sock)
 		writeErrorToSocket(sock, "Project does not exist.");		
 	}
     else {
-        char* pathToCommit = (char*)(malloc(sizeof(char) * (strlen(path) + 1 + strlen(DOT_COMMITS) + 1 + strlen(".Commit") + strlen(&ID))));
-        sprintf(pathToCommit, "%s/%s/%s%c", path, DOT_COMMITS, ".Commit", ID);
-        printf("%s\n", pathToCommit);
+        
+        //char* pathToCommit = (char*)(malloc(sizeof(char) * (strlen(path) + 1 + strlen(DOT_COMMITS) + 1 + strlen(".Commit") + strlen(&ID))));
+        //sprintf(pathToCommit, "%s/%s/%s%c", path, DOT_COMMITS, ".Commit", ID);
+        //printf("%s\n", pathToCommit);
 
         /*
         id ++;
@@ -729,8 +726,7 @@ int main(int argc, char *argv[])
                 if(strcmp(cmdBuf, "push") == 0)
                 {
                     char* projName = strrchr(fullCmdBuf, ':') + 1;
-                    char* ID = strchr(fullCmdBuf, ':') + 1;
-                    serverPush(projName, ID, newSocket);
+                    serverPush(projName, newSocket);
                 }
             }
         }

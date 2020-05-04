@@ -208,42 +208,6 @@ int projExistsInClient(char *projName) {
 	return 1;
 }
 
-char* hashFile(char* pathToFile)
-{
-    long sizeOfFile = findFileSize(pathToFile);
-    //printf("%ld\n", sizeOfFile);
-
-    //initialize a buffer, set it equal to file content
-    char* contentBuffer = (char*)(malloc(sizeof(char) * sizeOfFile));
-    memset(contentBuffer, '\0', sizeOfFile);
-    int fileFD = open(pathToFile, O_RDONLY, 00777);
-    int bytesReadFromFile = read(fileFD, contentBuffer, sizeof(char) * sizeOfFile);
-    close(fileFD);
-    //printf("%s\n", contentBuffer);
-
-    //hash this buffer
-    unsigned char hash[MD5_DIGEST_LENGTH];
-    MD5(contentBuffer, strlen(contentBuffer), hash);
-    /*
-    int i;
-    for(i = 0; i < MD5_DIGEST_LENGTH; i++)
-        printf("%02x", hash[i]);
-    printf("\n");*/
-    free(contentBuffer);
-
-    //convert hash into hex format to save to manifestEntryNode
-    char* strHash = (char*)(malloc(sizeof(char) * (MD5_DIGEST_LENGTH * 2 + 1)));
-    int i;
-    for(i = 0; i < MD5_DIGEST_LENGTH; i ++)
-    {
-        sprintf(strHash + 2 * i, "%02x", hash[i]);
-    }
-    //printf("%s\n", strHash);
-
-    return strHash;
-}
-
-
 void writeDotToSocket(int sock, char *projName, const char *fileExtension) {
 	
 	// Check first if project exists.
@@ -740,18 +704,15 @@ void update(char* projName)
         sprintf(pathToLocManifest, "%s/%s/%s", CLIENT_REPOS, projName, DOT_MANIFEST);
 
         int locManifestFd = open(pathToLocManifest, O_RDONLY, 00777);
-        Manifest* localManifestList = readManifest(sock);
+        Manifest* localManifestList = readManifest(locManifestFd);
         close(locManifestFd);
 
         // Compare serverManifestList and localManifestList
 
-        int updateFD = open(path, O_CREAT | O_WRONLY | O_TRUNC, 00777);
-        
-
-        
-
-
-
+        char* pathToUpdate = (char*)(malloc(sizeof(char) * (strlen(pathToProject) + 1 + strlen(DOT_UPDATE))));
+        sprintf(pathToUpdate, "%s/%s", pathToProject, DOT_UPDATE);
+        int updateFD = open(pathToUpdate, O_CREAT | O_WRONLY | O_TRUNC, 00777);
+        compareManifests(serverManifestList, localManifestList, pathToProject, updateFD);
     }
     else {
         // failed to update
@@ -847,12 +808,8 @@ void push(char* projName)
     //printf("Sending Project: %s to destroy\n", projName);
 
     // <lenCMD>:<push>:<projName>
-    char ID[11];
-    memset(ID, '\0', 11 * sizeof(char));
-    sprintf(ID, "%ld", id);
-    char* baseCmd = (char*)(malloc((strlen("push:") + strlen(projName) + 1 + strlen(ID) + 1) * sizeof(char)));
+    char* baseCmd = (char*)(malloc((strlen("push:") + strlen(projName) + 1) * sizeof(char)));
     strcpy(baseCmd, "push:");
-    strcat(baseCmd, ID);
     strcat(baseCmd, ":");
     strcat(baseCmd, projName);
     strcat(baseCmd, "\0");
@@ -871,7 +828,11 @@ void push(char* projName)
     free(baseCmd);
     
     send(sock, fullCmd, strlen(fullCmd), 0);
-    free(fullCmd);  
+    free(fullCmd);
+
+    char ID[11];
+    memset(ID, '\0', 11 * sizeof(char));
+    sprintf(ID, "%ld", id);
 
 }
 
