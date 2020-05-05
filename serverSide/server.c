@@ -257,7 +257,7 @@ void serverCheckout(char* projName, int sock)
         int manifestFD = open(pathToCVManifest, O_RDONLY, 00777);
         Manifest* projManifestList = readManifest(manifestFD);
         close(manifestFD);
-
+/*
         write(sockfd, "sendProject", strlen("sendProject:"));
 
         //we want to compress everything now
@@ -288,6 +288,7 @@ void serverCheckout(char* projName, int sock)
 
         unlink(pathToDotProject);
         free(pathToDotProject);
+*/
 
 
 
@@ -558,6 +559,151 @@ void serverPush(char* projName, int sock)
             close(commitFD);
             return;
         }
+        //printf("Server found the .Commit file\n");
+        send(sock, "Server found the .Commit file\n", strlen("Server found the .Commit file\n"), 0);
+
+        //make new directory for new version of project
+        char* pathToDotVersion = (char*)(malloc(sizeof(char) * (strlen(SERVER_REPOS) + 1 + strlen(projName) + 1 + strlen(DOT_VERSION))));
+        sprintf(pathToDotVersion, "%s/%s/%s", SERVER_REPOS, projName, DOT_VERSION);
+        char verNumber[11];
+        memset(verNumber, '\0', 11 * sizeof(char));
+        int verFD = open(pathToDotVersion, O_RDONLY, 00777);
+        read(verFD, verNumber, findFileSize(pathToDotVersion));
+        close(verFD);
+
+        //make path to old version, obtain old .Manifest
+        char* pathToOldManifest = (char*)(malloc(sizeof(char) * (strlen(SERVER_REPOS) + 1 + strlen(projName) + 1 + strlen(verNumber) + 1 + strlen(".Manifest"))));
+        sprintf(pathToOldManifest, "%s/%s/%s/.Manifest", SERVER_REPOS, projName, verNumber);
+        int manifestFD = open(pathToOldManifest, O_RDONLY, 00777);
+        Manifest* manifest = readManifest(manifestFD);
+        close(manifestFD);
+
+        int newVerNumber = atoi(verNumber) + 1;
+        sprintf(verNumber, "%d", newVerNumber);
+        verFD = open(pathToDotVersion, O_CREAT | O_WRONLY, 00777);
+        write(verFD, verNumber, strlen(verNumber));
+        close(verFD);
+        char* pathToNewVerDir = (char*)(malloc(sizeof(char) * (strlen(SERVER_REPOS) + 1 + strlen(projName) + 1 + strlen(verNumber))));
+        sprintf(pathToNewVerDir, "%s/%s/%s", SERVER_REPOS, projName, verNumber);
+        int newVerDirectory = mkdir(pathToNewVerDir, 00777);
+
+        clearSocketBuffer(socketBuffer);
+
+        readTillDelimiter(socketBuffer, commitFD, '\n');
+        char* numIDinCommit = readAllBuffer(socketBuffer);
+        clearSocketBuffer(socketBuffer);
+
+        char manifestCode[2];
+        while(read(commitFD, manifestCode, 2) == 2)
+        {
+            //if manifestCode is D, ignore this entry of the .Commit, do not ask server for this
+            if(strcmp(manifestCode, "D:") == 0)
+            {
+                //filePath
+                readTillDelimiter(socketBuffer, commitFD, ':');
+                char* fp = readAllBuffer(socketBuffer);
+                clearSocketBuffer(socketBuffer);
+                
+                //fileVersion
+                readTillDelimiter(socketBuffer, commitFD, ':');
+                clearSocketBuffer(socketBuffer);
+
+                //fileHash
+                readTillDelimiter(socketBuffer, commitFD, '\n');
+                clearSocketBuffer(socketBuffer);
+
+                removeEntryFromManifest(manifest, fp);
+
+                continue;
+            }
+
+            //read filePath
+            readTillDelimiter(socketBuffer, commitFD, ':');
+            char* filePath = readAllBuffer(socketBuffer);
+            clearSocketBuffer(socketBuffer);
+
+            //char* filePathMSG = (char*)(malloc(sizeof(char) * (strlen("sendPath:") + strlen(filePath))));
+            //sprintf(filePathMSG, "sendPath:%s", filePath);
+            //printf("%s\n", filePathMSG);
+
+            //send this filePath to the server so that it can send its contents back to here
+            //send(sock, filePath, strlen(filePath), 0);
+            char filePathLen[11];
+            memset(filePathLen, '\0', 11 * sizeof(char));
+            sprintf(filePathLen, "%d:", strlen(filePath));
+            write(sock, "sendPath:", strlen("sendPath:"));
+            write(sock, filePathLen, strlen(filePathLen));
+            write(sock, filePath, strlen(filePath));
+            //free(filePathMSG);
+
+            //read in versionNum
+            readTillDelimiter(socketBuffer, commitFD, ':');
+            char* verNum = readAllBuffer(socketBuffer);
+            clearSocketBuffer(socketBuffer);
+
+            //read in hashCode
+            readTillDelimiter(socketBuffer, commitFD, '\n');
+            char* fHash = readAllBuffer(socketBuffer);
+            clearSocketBuffer(socketBuffer);
+
+            //if checks for adding manifest node
+            if(strcmp(manifestCode, "A:") == 0)
+            {
+                //adding file, need to create new entry
+                addEntryToManifest(manifest, filePath, verNum, fHash, "N");
+            }
+            else if(strcmp(manifestCode, "M:") == 0)
+            {
+                ManifestEntryNode* modifiedEntry = findNodeByFilePath(manifest, filePath);
+                if(modifiedEntry == NULL)
+                {
+                    printf("oopsie\n");
+                }
+                else
+                {
+                    //inc. ver. num.
+                    modifiedEntry->versionNum = verNum;
+
+                    //update file hash
+                    modifiedEntry->fileHash = fHash;
+                
+                    //set manifestCode to N
+                    modifiedEntry->manifestCode = "N";
+                }
+            }
+
+            //wait for client to send a message containing fileContents
+            //responseCode
+            readTillDelimiter(socketBuffer, sock, ':');
+            clearSocketBuffer(socketBuffer);
+
+            //fileName
+            readTillDelimiter(socketBuffer, sock, ':');
+            char* fileName = readAllBuffer(socketBuffer);
+            clearSocketBuffer(socketBuffer);
+
+            //fileSize
+            readTillDelimiter(socketBuffer, sock, ':');
+            char* fileSize = readAllBuffer(socketBuffer);
+            long fSize = atol(fileSize);
+            clearSocketBuffer(socketBuffer);
+
+            //fileContent
+            char* fileContent = (char*)(malloc(sizeof(char) * fSize));
+            read(sock, fileContent, fSize);
+            //printf("%s\n", fileContent);
+
+            //start to write contents to file
+            char* pathToFileInNewVerDir = (char*)(malloc(sizeof(char) * (strlen(pathToNewVerDir) + 1 + strlen(fileName))));
+            sprintf(pathToFileInNewVerDir, "%s/%s", pathToNewVerDir, fileName);
+            int fileFD = open(pathToFileInNewVerDir, O_CREAT | O_WRONLY, 00777);
+            write(fileFD, fileContent, strlen(fileContent));
+
+        }
+
+        //need to send msg to client stating that we finished reading the .Commit
+        printf("Finished reading .Commit file\n");
+        send(sock, "fin:", strlen("fin:"), 0);
         
         //printf("%s\n", pathToCommit);
 

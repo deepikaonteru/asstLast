@@ -477,6 +477,8 @@ void commit(char* projName)
                     write(commitFD, ":", 1);
 
                     write(commitFD, curr->fileHash, strlen(curr->fileHash));
+
+                    write(commitFD, "\n", 1);
                     
                     printf("A %s\n", curr->filePath);
                 }
@@ -492,6 +494,8 @@ void commit(char* projName)
                     write(commitFD, ":", 1);
 
                     write(commitFD, curr->fileHash, strlen(curr->fileHash));
+
+                    write(commitFD, "\n", 1);
                     
                     printf("D %s\n", curr->filePath);
                 }
@@ -555,6 +559,8 @@ void commit(char* projName)
                             write(commitFD, ":", 1);
 
                             write(commitFD, liveHash, strlen(liveHash));
+
+                            write(commitFD, "\n", 1);
                             
                             printf("M %s\n", curr->filePath);
                         }
@@ -848,8 +854,58 @@ void push(char* projName)
     sprintf(ID, "%ld:", id);
     send(sock, ID, strlen(ID), 0);
 
-    
+    char commitStatusMessage[100];
+    memset(commitStatusMessage, '\0', 50 * sizeof(char));
+    read(sock, commitStatusMessage, 50 * sizeof(char));
+    printf("%s", commitStatusMessage);
 
+    SocketBuffer* socketBuffer = createBuffer();
+    int loopEnabled = 1;
+    while(loopEnabled)
+    {
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* response = readAllBuffer(socketBuffer);
+        if(strcmp(response, "fin") == 0) {
+            loopEnabled = 0;
+            break;
+        }
+        else
+        {
+            clearSocketBuffer(socketBuffer);
+            readTillDelimiter(socketBuffer, sock, ':');
+            char* lenFilePath = readAllBuffer(socketBuffer);
+            int lFilePath = atoi(lenFilePath);
+
+            clearSocketBuffer(socketBuffer);
+            readNBytes(socketBuffer, sock, lFilePath);
+            char* filePath = readAllBuffer(socketBuffer);
+            //printf("%s\n", filePath);
+            
+            clearSocketBuffer(socketBuffer);
+
+            //once we have a filePath, open the file specified by filePath, send contents back as a message
+            char* fileName = strrchr(filePath, '/') + 1;
+            long int fileSize = findFileSize(filePath);
+            char fileSizeBuf[11];
+            memset(fileSizeBuf, '\0', sizeof(char) * 11);
+            sprintf(fileSizeBuf, "%ld", fileSize);
+            
+            int fileFD = open(filePath, O_RDONLY, 00777);
+            char* fileContent = (char*)(malloc(sizeof(char) * fileSize));
+            read(fileFD, fileContent, fileSize);
+            close(fileFD);
+            
+            char* msg = (char*)(malloc(sizeof(char) * (strlen("sendfile:") + strlen(fileName) + 1 + strlen(fileSizeBuf) + 1 + strlen(fileContent))));
+            sprintf(msg, "sendfile:%s:%s:%s", fileName, fileSizeBuf, fileContent);
+            //printf("%s\n", msg);
+
+            send(sock, msg, strlen(msg), 0);
+
+            //char* fileMSG = (char*)(malloc(sizeof(char) * (strlen("sendfile:") + strlen(fileName) + 1 + strlen(fileSizeBuf) + 1 + strlen(fileContent))));
+            //sprintf(fileMSG, "sendfile:%s:%s:%s", fileName, fileSizeBuf, fileContent);
+            //printf("%s\n", fileMSG);
+        }
+    }
 }
 
 // add an entry for the the file
@@ -1201,7 +1257,7 @@ void checkout(char* projName)
     //printf("%s\n", fullCmd);
 
     free(baseCmd);
-
+/*
     send(sock, fullCmd, strlen(fullCmd), 0);
 
     //Client is expecting a message that sends the project over or a failed message
@@ -1236,7 +1292,7 @@ void checkout(char* projName)
 		free(pathToDotProject);
 		printf("Done.\n");
 
-    }
+    }////////////////////////////////////////////////////////////////////////////////////*/
     //readTillDelimiter(socketBuffer, sock, ':');
     //char* responseCode = readAllBuffer(socketBuffer);
     //printf("%s\n", responseCode);
@@ -1586,7 +1642,7 @@ int main(int argc, char *argv[])
         memset(numID, '\0', sizeof(char) * 11);
         read(idFD, numID, 1);
         id = atol(numID);
-        printf("ID: %ld\n", id);
+        //printf("ID: %ld\n", id);
     }
     
 

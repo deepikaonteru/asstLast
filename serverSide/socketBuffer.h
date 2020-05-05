@@ -144,6 +144,29 @@ static void addEntryToManifest(Manifest *manifestList, char *filePath, char *ver
 	manifestList->numFiles += 1;
 }
 
+static void removeEntryFromManifest(Manifest* manifestList, char* filePath)
+{
+	ManifestEntryNode* curr = manifestList->head;
+	ManifestEntryNode* prev;
+	if(curr != NULL && strcmp(manifestList->head->filePath, filePath) == 0)
+	{
+		manifestList->head = manifestList->head->next;
+		free(curr);
+		return;
+	}
+	while(curr != NULL && strcmp(curr->filePath, filePath) != 0)
+	{
+		prev = curr;
+		curr = curr->next;
+	}
+	if(curr == NULL)
+	{
+		return;
+	}
+	prev->next = curr->next;
+	free(curr);
+}
+
 //Ex:
     //1
 	//<numFiles>
