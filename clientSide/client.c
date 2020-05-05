@@ -460,11 +460,6 @@ void commit(char* projName)
                 //if this curr has code N, move on to next node
                 if(strcmp(curr->manifestCode, "N") == 0)
                 {
-                    liveHash = strdup(hashFile(curr->filePath));
-                    if(strcmp(liveHash, curr->fileHash) != 0)
-                    {
-                        printf("Error: File de-sync on client side. Please add all files before committing.\n");
-                    }
                     curr = curr->next;
                     continue;
                 }
@@ -1309,129 +1304,104 @@ void checkout(char* projName)
     strcat(fullCmd, "\0");
     //printf("%s\n", fullCmd);
 
-    free(baseCmd);
-/*
     send(sock, fullCmd, strlen(fullCmd), 0);
+    free(baseCmd);
 
-    //Client is expecting a message that sends the project over or a failed message
-    //sendProject:<numFilesBeingSent>:<lenFile1Name>:<file1Name>:<file1Size>:<file1Content>:<lenFile2Name>:<file2Name>:<file2Size>:<file2Content>
-    SocketBuffer *socketBuffer = createBuffer();
-
-    if(strcmp(responseCode, "sendProject") == 0)
-    {
-        // comes in compressed form
-        char* pathToDotProject = (char*)(malloc(sizeof(char) * (strlen(pathToProject) + 1 + strlen(DOT_PROJECT))));
-        sprintf(pathToDotProject, "%s/%s", pathToProject, DOT_PROJECT);
-
-        decompressProject(sock, pathToDotProject, pathToProject);
-
-        // open a FD
-        int projectFd = open(pathToDotProject, O_RDONLY, 00777);
-
-        // write into it
-
-        readTillDelimiter(socketBuffer, projectFd, ':');
-		char *numFilesStr = readAllBuffer(socketBuffer);
-		long numFiles = atol(numFilesStr);
-		free(numFilesStr);
-
-		// Now read N files, and save them
-		while(numFiles-- > 0) {
-			writeFileFromSocket(projectFd, project);
-		}
-
-        close(projectFd);
-		unlink(pathToDotProject);
-		free(pathToDotProject);
-		printf("Done.\n");
-
-    }////////////////////////////////////////////////////////////////////////////////////*/
-    //readTillDelimiter(socketBuffer, sock, ':');
-    //char* responseCode = readAllBuffer(socketBuffer);
-    //printf("%s\n", responseCode);
-
-    /*
-    char tarBuffer[1024] = {0};
-
+    //sendProj:<lenName>:<name>:<sizeOfManifest>:<content>
+    //read manifestContent into Manifest struct
+    //write .Manifest file on clientSide using Manifest struct
+    SocketBuffer* socketBuffer = createBuffer();
     readTillDelimiter(socketBuffer, sock, ':');
-    char* tarFileSize = readAllBuffer(socketBuffer);
-    long tfSize = atol(tarFileSize);
-
-    send(sock, "ok:", strlen("ok:"), 0);
-
-    int numBytesReceived = read(sock, tarFileSize, tfSize);
-    printf("%d\n", tfSize);
-    printf("%d\n", numBytesReceived);
-
-    if(tfSize == numBytesReceived)
-    {
-        char* pathToTar = (char*)(malloc(sizeof(char) * strlen(CLIENT_REPOS) + 1 + strlen(projName) + strlen(".tar.gz")));
-        sprintf(pathToTar, "%s/%s.tar.gz", CLIENT_REPOS, projName);
-        printf("%s\n", pathToTar);
-
-        int tarFD = open(pathToTar, O_CREAT | O_WRONLY, 00777);
-        int numBytesWritten = write(tarFD, tarBuffer, numBytesReceived);
-        printf("Wrote: %d bytes\n", numBytesWritten);
-        close(tarFD);
-    }
-    */
-    //if sendProject, then we want to read n times, where n is the number of files sent by server
-    /*
-    if(strcmp(responseCode, "sendProject") == 0)
+    char* responseCode = readAllBuffer(socketBuffer);
+    clearSocketBuffer(socketBuffer);
+    if(strcmp(responseCode, "sendProj") == 0)
     {
         readTillDelimiter(socketBuffer, sock, ':');
-        char* tarFileSize = readAllBuffer(socketBuffer);
-        long tfSize = atol(tarFileSize);
-
-        readNBytes(socketBuffer, sock, tfSize);
-        char* tarBuffer = readAllBuffer(socketBuffer);
-
-        char* pathToTar = (char*)(malloc(sizeof(char) * strlen(CLIENT_REPOS) + 1 + strlen(projName) + strlen(".tar")));
-        sprintf(pathToTar, "%s/%s.tar", CLIENT_REPOS, projName);
-        int tarFD = open(pathToTar, O_CREAT | O_WRONLY, 00777);
-        write(tarFD, tarBuffer, tfSize);
-        /*
-        char* pathToProj = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + 1 + strlen(projName))));
-        sprintf(pathToProj, "%s/%s", CLIENT_REPOS, projName);
-        int projDIR = mkdir(pathToProj, 00777);
-
-        readTillDelimiter(socketBuffer, sock, ':');
-        char* numFilesSent = readAllBuffer(socketBuffer);
-
-        readTillDelimiter(socketBuffer, sock, ':');
-        char* lenManifestName = readAllBuffer(socketBuffer);
+        char* lenName = readAllBuffer(socketBuffer);
+        //printf("%s:", lenName);
+        clearSocketBuffer(socketBuffer);
 
         readTillDelimiter(socketBuffer, sock, ':');
         char* manifestName = readAllBuffer(socketBuffer);
+        //printf("%s:", manifestName);
+        clearSocketBuffer(socketBuffer);
 
         readTillDelimiter(socketBuffer, sock, ':');
         char* manifestSize = readAllBuffer(socketBuffer);
-        long int mSize = atol(manifestSize);
-
+        long mSize = atol(manifestSize);
+        //printf("%s:", manifestSize);
+        clearSocketBuffer(socketBuffer);
+        
         readNBytes(socketBuffer, sock, mSize);
-        char* manifestContent = readAllBuffer(socketBuffer);
-        char* pathToManifest = (char*)(malloc(sizeof(char) * (strlen(pathToProj) + 1 + strlen(DOT_MANIFEST))));
-        sprintf(pathToManifest, "%s/%s", pathToProj, DOT_MANIFEST);
+        char* content = readAllBuffer(socketBuffer);
+        //printf("%s", content);
+        clearSocketBuffer(socketBuffer);
+
+        //save .Manifest to local project
+        char* pathToProject = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + 1 + strlen(projName))));
+        sprintf(pathToProject, "%s/%s", CLIENT_REPOS, projName);
+        //printf("%s\n", pathToProject);
+        mkdir(pathToProject, 00777);
+
+        char* pathToManifest = (char*)(malloc(sizeof(char) * (strlen(pathToProject) + strlen("/.Manifest"))));
+        sprintf(pathToManifest, "%s/.Manifest", pathToProject);
+        
         int manifestFD = open(pathToManifest, O_CREAT | O_WRONLY, 00777);
-        write(manifestFD, manifestContent, mSize);
+        write(manifestFD, content, mSize);
         close(manifestFD);
 
-        char* pathToDotProject = (char*)(malloc(sizeof(char) * (strlen(pathToProj) + strlen("/.project"))));
-        sprintf(pathToDotProject, "%s/.project", pathToProj);
-        decompressProject(sock, pathToDotProject, pathToProj);
-    }*/
+        //loop until server sends fin message
+        int loopEnabled = 1;
+        while(loopEnabled)
+        {
+            readTillDelimiter(socketBuffer, sock, ':');
+            char* response = readAllBuffer(socketBuffer);
+            clearSocketBuffer(socketBuffer);
+            if(strcmp(response, "fin") == 0)
+            {
+                loopEnabled = 0;
+                break;
+            }
+            else
+            {
+                readTillDelimiter(socketBuffer, sock, ':');
+                char* fileName = readAllBuffer(socketBuffer);
+                //printf("%s:", fileName);
+                clearSocketBuffer(socketBuffer);
 
-    //if not sendProject, FAIL
-    /*
+                readTillDelimiter(socketBuffer, sock, ':');
+                char* fileSize = readAllBuffer(socketBuffer);
+                long fSize = atol(fileSize);
+                //printf("%s:", fileSize);
+                clearSocketBuffer(socketBuffer);
+
+                readNBytes(socketBuffer, sock, fSize);
+                char* fileContent = readAllBuffer(socketBuffer);
+                //printf("%s\n", fileContent);
+                clearSocketBuffer(socketBuffer);
+
+                //build path to file on client side
+                char* pathToFile = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + 1 + strlen(projName) + 1 + strlen(fileName))));
+                sprintf(pathToFile, "%s/%s/%s", CLIENT_REPOS, projName, fileName);
+                //printf("%s\n", pathToFile);
+
+                //open this built path to write into it
+                int fileFD = open(pathToFile, O_CREAT | O_WRONLY, 00777);
+                write(fileFD, fileContent, fSize);
+                close(fileFD);
+
+            }
+        }
+        printf("Project '%s' successfully created.\n", projName);
+    }
     else
     {
-		printf("Could not checkout project.\n");
-		readTillDelimiter(socketBuffer, sock, ':');
-		char *reason = readAllBuffer(socketBuffer);
-		printf("Reason: %s\n", reason);
-		free(reason);
-    }*/
-
+        printf("Project could not be checked out from server.\n");		
+        readTillDelimiter(socketBuffer, sock, ':');
+        char *reason = readAllBuffer(socketBuffer);
+        printf("Reason: %s\n", reason);
+        free(reason);        
+    }
 }
 
 void getCurrentVersion(char* projName)
