@@ -103,6 +103,7 @@ void configure(char* hostName, char* port)
     write(fd, hostName, strlen(hostName));
     write(fd, "\n", 1);
     write(fd, port, strlen(port));
+    printf("Configured on port %s.\n", port);
     close(fd);
 }
 
