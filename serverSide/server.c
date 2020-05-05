@@ -250,6 +250,10 @@ void serverUpgrade(char* projName, int sock)
     else {
         //server expects- sendPath:<filePathLength>:<filePath>
         //OR: fin:
+        char* cv = readCurrentVersion(projName);
+        //printf("%s\n", cv);
+        write(sock, cv, strlen(cv));
+        write(sock, ":", 1);
 
         SocketBuffer* socketBuffer = createBuffer();
         int loopEnabled = 1;
@@ -260,10 +264,10 @@ void serverUpgrade(char* projName, int sock)
             if(strcmp(response, "fin") == 0) {
                 loopEnabled = 0;
                 clearSocketBuffer(socketBuffer);
-                printf("Project successfully sent updated project to client side.\n");
+                printf("Server successfully sent updated project to client side.\n");
                 break;
             }
-            else{
+            else {
                 clearSocketBuffer(socketBuffer);
                 readTillDelimiter(socketBuffer, sock, ':');
                 char* lenFilePath = readAllBuffer(socketBuffer);
@@ -278,14 +282,18 @@ void serverUpgrade(char* projName, int sock)
 
                 //once we have a filePath, open the file specified by filePath, send contents back as a message
                 char* fileName = strrchr(filePath, '/') + 1;
-                long int fileSize = findFileSize(filePath);
+                //printf("%s\n", fileName);
+                char* pathOfFileToSend = (char*)(malloc(sizeof(char) * (strlen(SERVER_REPOS) + 1 + strlen(projName) + 1 + strlen(cv) + 1 + strlen(fileName))));
+                sprintf(pathOfFileToSend, "%s/%s/%s/%s", SERVER_REPOS, projName, cv, fileName);
+                long int fileSize = findFileSize(pathOfFileToSend);
                 char fileSizeBuf[11];
                 memset(fileSizeBuf, '\0', sizeof(char) * 11);
                 sprintf(fileSizeBuf, "%ld", fileSize);
                 
-                int fileFD = open(filePath, O_RDONLY, 00777);
+                int fileFD = open(pathOfFileToSend, O_RDONLY, 00777);
                 char* fileContent = (char*)(malloc(sizeof(char) * fileSize));
                 read(fileFD, fileContent, fileSize);
+                //printf("%s\n", fileContent);
                 close(fileFD);
                 
                 char* msg = (char*)(malloc(sizeof(char) * (strlen("sendfile:") + strlen(fileName) + 1 + strlen(fileSizeBuf) + 1 + strlen(fileContent))));
@@ -295,9 +303,7 @@ void serverUpgrade(char* projName, int sock)
                 send(sock, msg, strlen(msg), 0);
             }
 
-
         }
-
         
     }
 }

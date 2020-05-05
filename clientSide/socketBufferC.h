@@ -400,6 +400,14 @@ static int compareManifests(Manifest* serverMan, Manifest* clientMan, char* path
 			//if they do match...
 			else
 			{
+				//increment version number
+				int verNum = atoi(curr->versionNum);
+				verNum ++;
+				char vN[10];
+				memset(vN, '\0', 10 * sizeof(char));
+				sprintf(vN, "%d", verNum);
+				curr->versionNum = vN;
+
 				write(updateFD, "M:", 2);
 
 				write(updateFD, curr->filePath, strlen(curr->filePath));
@@ -427,6 +435,7 @@ static int compareManifests(Manifest* serverMan, Manifest* clientMan, char* path
 		printf("Error: Conflicts were found and must be resolved before project can be updated.\n");
 	}
 	close(conflictFD);
+	write(updateFD, "\n", 1);
 	close(updateFD);
 	
 }

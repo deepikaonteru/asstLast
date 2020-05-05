@@ -706,7 +706,6 @@ void upgrade(char* projName)
         remove(pathToDotUpdate);
         free(pathToProject);
         free(pathToDotUpdate);
-        free(pathToDotUpdate);
         return;
 
     }
@@ -715,11 +714,10 @@ void upgrade(char* projName)
     sprintf(pathToDotConflict, "%s/%s/%s", CLIENT_REPOS, projName,DOT_CONFLICT);
     //printf("%s\n", pathToDotConflict);
 
-    if(fileExistsCheck(pathToDotConflict)==0)   
+    if(fileExistsCheck(pathToDotConflict)!=0)   
     {
 		printf("Error: Resolve the conflicts first and update project again.\n");
         free(pathToProject);
-        free(pathToDotUpdate);
         free(pathToDotUpdate);
         free(pathToDotConflict);
         return;
@@ -807,9 +805,16 @@ void upgrade(char* projName)
     Manifest* clientManifest = readManifest(manifestFD);
     close(manifestFD);
 
+    //receive version number from server
+    SocketBuffer* socketBuffer = createBuffer();
+    readTillDelimiter(socketBuffer, sock, ':');
+    char* serverVersion = readAllBuffer(socketBuffer);
+    int sVersion = atoi(serverVersion);
+    //printf("%d\n", sVersion);
+    clientManifest->versionNum = sVersion;
+
     //apply the changes in the .Update file
     // - need to loop reading of .Update file
-    SocketBuffer* socketBuffer = createBuffer();
     int updateFD = open(pathToDotUpdate, O_RDONLY, 00777);
     char* updateCode = (char*)(malloc(sizeof(char) * 3));
     memset(updateCode, '\0', 3 * sizeof(char));
@@ -855,11 +860,13 @@ void upgrade(char* projName)
         //read in versionNum
         readTillDelimiter(socketBuffer, updateFD, ':');
         char* verNum = readAllBuffer(socketBuffer);
+        //printf("%s\n", verNum);
         clearSocketBuffer(socketBuffer);
 
         //read in hashCode
         readTillDelimiter(socketBuffer, updateFD, '\n');
         char* fHash = readAllBuffer(socketBuffer);
+        //printf("%s\n", fHash);
         clearSocketBuffer(socketBuffer);
 
         //if check for adding manifest node
@@ -889,22 +896,25 @@ void upgrade(char* projName)
                 modifiedEntry->manifestCode = "N";
             }
         }
-        
         //wait for client to send a message containing fileContents
         //responseCode
         //sendfile:
         readTillDelimiter(socketBuffer, sock, ':');
+        char* sendFileMSG = readAllBuffer(socketBuffer);
+        //printf("%s:", sendFileMSG);
         clearSocketBuffer(socketBuffer);
 
         //fileName
         readTillDelimiter(socketBuffer, sock, ':');
         char* fileName = readAllBuffer(socketBuffer);
+        //printf("%s:", fileName);
         clearSocketBuffer(socketBuffer);
 
         //fileSize
         readTillDelimiter(socketBuffer, sock, ':');
         char* fileSize = readAllBuffer(socketBuffer);
         long fSize = atol(fileSize);
+        //printf("%s:", fileSize);
         clearSocketBuffer(socketBuffer);
 
         //fileContent
@@ -917,8 +927,15 @@ void upgrade(char* projName)
         sprintf(pathToUpdatedFile, "%s/%s", pathToProject, fileName);
         int fileFD = open(pathToUpdatedFile, O_CREAT | O_WRONLY, 00777);
         write(fileFD, fileContent, strlen(fileContent));
+        close(fileFD);
     }
     close(updateFD);
+    remove(pathToDotUpdate);
+
+    //rewrite .Manifest using manifest struct
+    manifestFD = open(pathToManifest, O_CREAT | O_WRONLY, 00777);
+    writeToManifest(manifestFD, clientManifest);
+    close(manifestFD);
 
     send(sock, "fin:", strlen("fin:"), 0);
     printf("Finished upgrading project.\n");
