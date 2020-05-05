@@ -416,7 +416,7 @@ void commit(char* projName)
             //removed files rather than scanning through the entire entry). 
         //printf("%d\n", serverManifestList->versionNum);
         //printf("%d\n", clientManifestList->versionNum);
-        if(serverManifestList->versionNum != clientManifestList->versionNum) 
+        if(serverManifestList->versionNum > clientManifestList->versionNum) 
         {
             writeErrorToSocket(sock, "Client has to update project first.");
             printf("Error: .Manifest version numbers do not match, call update on project first.\n");
@@ -460,6 +460,11 @@ void commit(char* projName)
                 //if this curr has code N, move on to next node
                 if(strcmp(curr->manifestCode, "N") == 0)
                 {
+                    liveHash = strdup(hashFile(curr->filePath));
+                    if(strcmp(liveHash, curr->fileHash) != 0)
+                    {
+                        printf("Error: File de-sync on client side. Please add all files before committing.\n");
+                    }
                     curr = curr->next;
                     continue;
                 }
@@ -867,6 +872,49 @@ void push(char* projName)
         char* response = readAllBuffer(socketBuffer);
         if(strcmp(response, "fin") == 0) {
             loopEnabled = 0;
+            /*wait to receive updated .Manifest here*/
+            //1:9:.Manifest:<numBytesRead>:<readIn>
+            //numFiles
+            readTillDelimiter(socketBuffer, sock, ':');
+            char* nF = readAllBuffer(socketBuffer);
+            //printf("%s:", nF);
+            clearSocketBuffer(socketBuffer);
+            
+            //length of .Manifest
+            readTillDelimiter(socketBuffer, sock, ':');
+            char* lenManifest = readAllBuffer(socketBuffer);
+            //printf("%s:", lenManifest);
+            clearSocketBuffer(socketBuffer);
+
+            //".Manifest"
+            readTillDelimiter(socketBuffer, sock, ':');
+            char* manifestName = readAllBuffer(socketBuffer);
+            //printf("%s:", manifestName);
+            clearSocketBuffer(socketBuffer);
+
+            //numBytesOfContent
+            readTillDelimiter(socketBuffer, sock, ':');
+            char* numBytesOfContent = readAllBuffer(socketBuffer);
+            //printf("%s:", numBytesOfContent);
+            long nBytesContent = atol(numBytesOfContent);
+            clearSocketBuffer(socketBuffer);
+
+            //content
+            //char* content = (char*)(malloc(sizeof(char) * nBytesContent));
+            //read(sock, content, nBytesContent);
+            readNBytes(socketBuffer, sock, nBytesContent);
+            char* content = readAllBuffer(socketBuffer);
+            //printf("%s", content);
+            clearSocketBuffer(socketBuffer);
+
+            //build path to .Manifest on client, create/write .Manifest on client
+            char* pathToManifest = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + 1 + strlen(projName) + strlen("/.Manifest"))));
+            sprintf(pathToManifest, "%s/%s/.Manifest", CLIENT_REPOS, projName);
+            //printf("%s\n", pathToManifest);
+            int manifestFD = open(pathToManifest, O_CREAT | O_WRONLY, 00777);
+            write(manifestFD, content, nBytesContent);
+            close(manifestFD);
+
             break;
         }
         else
@@ -906,6 +954,11 @@ void push(char* projName)
             //printf("%s\n", fileMSG);
         }
     }
+
+    char finMSG[5];
+    memset(finMSG, '\0', 5 * sizeof(char));
+    read(sock, finMSG, 4);
+    printf("Project successfully pushed.\n");
 }
 
 // add an entry for the the file
