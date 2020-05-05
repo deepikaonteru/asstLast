@@ -618,7 +618,7 @@ void upgrade(char* projName)
     //if there is no .Update on the client side or if .Conflict exists fail
     char* pathToDotUpdate = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(DOT_UPDATE))));
     sprintf(pathToDotUpdate, "%s/%s/%s", CLIENT_REPOS, projName,DOT_UPDATE);
-    printf("%s\n", pathToDotUpdate);
+    //printf("%s\n", pathToDotUpdate);
     if(fileExistsCheck(pathToDotUpdate)==0)   
     {
 		printf("Error: Call update on project first.\n");
@@ -627,9 +627,10 @@ void upgrade(char* projName)
         return;
     } 
 
-    if(fileExistsCheck(pathToDotUpdate) && fileSize(pathToDotUpdate)==0)
+    if(fileExistsCheck(pathToDotUpdate) && findFileSize(pathToDotUpdate)==0)
     {
-        printf("Error: Up to Date.\n");
+        printf("Up to Date, no need to upgrade.\n");
+        remove(pathToDotUpdate);
         free(pathToProject);
         free(pathToDotUpdate);
         free(pathToDotUpdate);
@@ -639,7 +640,7 @@ void upgrade(char* projName)
 
     char* pathToDotConflict = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(DOT_CONFLICT))));
     sprintf(pathToDotConflict, "%s/%s/%s", CLIENT_REPOS, projName,DOT_CONFLICT);
-    printf("%s\n", pathToDotConflict);
+    //printf("%s\n", pathToDotConflict);
 
     if(fileExistsCheck(pathToDotConflict)==0)   
     {
@@ -649,19 +650,204 @@ void upgrade(char* projName)
         free(pathToDotUpdate);
         free(pathToDotConflict);
         return;
-    } 
+    }
+
+    int sock, port, numBytes;
+    struct sockaddr_in serverAddr;
+    struct hostent* server;
+
+    //read from .configure file to obtain IP and port#
+    int fd = open("./.configure", O_RDONLY);
+        if(fd == -1) { //if file does not exist
+		printf("Error: missing .configure\n");
+		close(fd);
+		return;
+	}
+
+    fd = open("./.configure", O_RDONLY);
+    port = getPortNum(fd);
+    close(fd);
+
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if(sock < 0)
+    {
+        printf("Error: socket failed to open.\n");
+        return;
+    }
+
+    fd = open("./.configure", O_RDONLY);
+    char hostName[256];
+    getHostName(fd, hostName);
+    server = gethostbyname(hostName);
+    if(server == NULL)
+    {
+        printf("Error: no such host.\n");
+        return;
+    }
+
+    bzero((char*)(&serverAddr), sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    bcopy((char*)(server->h_addr), (char*)(&serverAddr.sin_addr.s_addr), server->h_length);
+    serverAddr.sin_port = htons(port);
+
+    if(connect(sock, (struct sockaddr*)(&serverAddr), sizeof(serverAddr)) < 0)
+    {
+        printf("Error: could not connect.\n");
+        return;
+    }
+
+    //Step 3: Once connection is established, check to see if project exists on server
+        //if it does not exist on server, server reports that project DNE, end command
+        //if it DOES exist...
+            //need a way to compress the entire project folder for the latest version
+            //could use system(tar...) to compress whole folder on serverSide, then...
+            //send that compressed file over to clientSide and decompress it
+            //extract all files, rename the folder from <versionNumber> to <projectName>
+
+    // Request to get project from server
+    //<lengthAfterFirstColon>:co:<projName>
+    char* baseCmd = (char*)(malloc((strlen("upg:") + strlen(projName) + 1) * sizeof(char)));
+    strcpy(baseCmd, "upg:");
+    strcat(baseCmd, projName);
+    strcat(baseCmd, "\0");
+
+    int numBytesToSend = strlen(baseCmd);
+    char numBytesBuffer[10];
+    memset(numBytesBuffer, '\0', 10 * sizeof(char));
+    sprintf(numBytesBuffer, "%d", numBytesToSend);
+
+    char* fullCmd = (char*)(malloc((strlen(numBytesBuffer) + 1 + strlen(baseCmd) + 1) * sizeof(char)));
+    strcpy(fullCmd, numBytesBuffer);
+    strcat(fullCmd, ":");
+    strcat(fullCmd, baseCmd);
+    strcat(fullCmd, "\0");
+    //printf("%s\n", fullCmd);
+
+    send(sock, fullCmd, strlen(fullCmd), 0);
+    free(baseCmd);
+
+    //get client's current .Manifest into a struct
+    char* pathToManifest = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + 1 + strlen(projName) + strlen("/.Manifest"))));
+    sprintf(pathToManifest, "%s/%s/.Manifest", CLIENT_REPOS, projName);
+
+    int manifestFD = open(pathToManifest, O_RDONLY, 00777);
+    Manifest* clientManifest = readManifest(manifestFD);
+    close(manifestFD);
 
     //apply the changes in the .Update file
+    // - need to loop reading of .Update file
+    SocketBuffer* socketBuffer = createBuffer();
+    int updateFD = open(pathToDotUpdate, O_RDONLY, 00777);
+    char* updateCode = (char*)(malloc(sizeof(char) * 3));
+    memset(updateCode, '\0', 3 * sizeof(char));
+    while(read(updateFD, updateCode, 2) == 2)
+    {
+        if(strcmp(updateCode, "D:") == 0)
+        {
+            //filePath
+            readTillDelimiter(socketBuffer, updateFD, ':');
+            char* fp = readAllBuffer(socketBuffer);
+            clearSocketBuffer(socketBuffer);
+            
+            //fileVersion
+            readTillDelimiter(socketBuffer, updateFD, ':');
+            clearSocketBuffer(socketBuffer);
 
-    
+            //fileHash
+            readTillDelimiter(socketBuffer, updateFD, '\n');
+            clearSocketBuffer(socketBuffer);
 
+            removeEntryFromManifest(clientManifest, fp);
+            remove(fp);
 
+            continue;           
+        }
+        
+        //read filePath
+        readTillDelimiter(socketBuffer, updateFD, ':');
+        char* filePath = readAllBuffer(socketBuffer);
+        //printf("%s\n", filePath);
+        clearSocketBuffer(socketBuffer);
 
+        //send this filePath to the server so that it can send its contents back to here
+        //send(sock, filePath, strlen(filePath), 0);
+        char filePathLen[11];
+        memset(filePathLen, '\0', 11 * sizeof(char));
+        sprintf(filePathLen, "%d:", strlen(filePath));
+        //send this msg to server- 
+        write(sock, "sendPath:", strlen("sendPath:"));
+        write(sock, filePathLen, strlen(filePathLen));
+        write(sock, filePath, strlen(filePath));
 
+        //read in versionNum
+        readTillDelimiter(socketBuffer, updateFD, ':');
+        char* verNum = readAllBuffer(socketBuffer);
+        clearSocketBuffer(socketBuffer);
 
+        //read in hashCode
+        readTillDelimiter(socketBuffer, updateFD, '\n');
+        char* fHash = readAllBuffer(socketBuffer);
+        clearSocketBuffer(socketBuffer);
 
+        //if check for adding manifest node
+        if(strcmp(updateCode, "A:") == 0)
+        {
+            //adding file, need to create new entry
+            addEntryToManifest(clientManifest, filePath, verNum, fHash, "N");
+        }
 
+        //if check for if it's M
+        else if(strcmp(updateCode, "M:") == 0)
+        {
+            ManifestEntryNode* modifiedEntry = findNodeByFilePath(clientManifest, filePath);
+            if(modifiedEntry == NULL)
+            {
+                printf("oopsie\n");
+            }
+            else
+            {
+                //inc. ver. num.
+                modifiedEntry->versionNum = verNum;
 
+                //update file hash
+                modifiedEntry->fileHash = fHash;
+            
+                //set manifestCode to N
+                modifiedEntry->manifestCode = "N";
+            }
+        }
+        
+        //wait for client to send a message containing fileContents
+        //responseCode
+        readTillDelimiter(socketBuffer, sock, ':');
+        clearSocketBuffer(socketBuffer);
+
+        //fileName
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* fileName = readAllBuffer(socketBuffer);
+        clearSocketBuffer(socketBuffer);
+
+        //fileSize
+        readTillDelimiter(socketBuffer, sock, ':');
+        char* fileSize = readAllBuffer(socketBuffer);
+        long fSize = atol(fileSize);
+        clearSocketBuffer(socketBuffer);
+
+        //fileContent
+        char* fileContent = (char*)(malloc(sizeof(char) * fSize));
+        read(sock, fileContent, fSize);
+        //printf("%s\n", fileContent);
+
+        //start to write contents to file
+        char* pathToUpdatedFile = (char*)(malloc(sizeof(char) * (strlen(pathToProject) + 1 + strlen(fileName))));
+        sprintf(pathToUpdatedFile, "%s/%s", pathToProject, fileName);
+        int fileFD = open(pathToUpdatedFile, O_CREAT | O_WRONLY, 00777);
+        write(fileFD, fileContent, strlen(fileContent));
+    }
+    close(updateFD);
+
+    printf("Finished upgrading project.\n");
+    send(sock, "fin:", strlen("fin:"), 0);
 }
 
 

@@ -104,7 +104,7 @@ void writeFToSocket(int sock, char *projName, const char *fileExtension) {
 
 	// Create file path on server.
 	sprintf(path, "%s/%s/%s/%s", SERVER_REPOS, projName, version, fileExtension);
-    printf("%s\n", path);
+    //printf("%s\n", path);
 	free(version);
 	
 	long fileSize = findFileSize(path);	
@@ -246,19 +246,12 @@ void serverUpgrade(char* projName, int sock)
 
 	if(!ProjInServerRepos(projName)) {
 		writeErrorToSocket(sock, "Project does not exist.");
-
 	}
     else {
-
-        // Read .update file now.
-			
-		// Build path to the .update file locally on server.
-        char* pathToDotUpdate = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 1 + strlen(".Update")) * sizeof(char)));
-		
-
+        //server expects- sendPath:<filePathLength>:<filePath>
+        //OR: fin:
+        
     }
-    
-
 }
 
 void serverCheckout(char* projName, int sock)
@@ -300,18 +293,21 @@ void serverCheckout(char* projName, int sock)
 
             //retrieve fileName, fileSize, fileContent
             char* fileName = strrchr(filePath, '/') + 1;
+            char* serverFilePath = (char*)(malloc(sizeof(char) * (strlen(SERVER_REPOS) + 1 + strlen(projName) + 1 + strlen(cv) + 1 + strlen(fileName))));
+            sprintf(serverFilePath, "%s/%s/%s/%s", SERVER_REPOS, projName, cv, fileName);
             //printf("%s\n", fileName);
             char fileSize[11];
-            long fSize = findFileSize(filePath);
+            long fSize = findFileSize(serverFilePath);
             memset(fileSize, '\0', sizeof(char) * 11);
             sprintf(fileSize, "%ld", fSize);
             //printf("%s\n", fileSize);
-            printf("yer\n");
+            //printf("yer\n");
+            //printf("%s\n", serverFilePath);
             char* fileContent = (char*)(malloc(sizeof(char) * fSize));
-            int fileFD = open(filePath, O_RDONLY, 00777);
+            int fileFD = open(serverFilePath, O_RDONLY, 00777);
             read(fileFD, fileContent, fSize);
             close(fileFD);
-            printf("yer\n");
+            //printf("yer\n");
 
             //send this data in a message
             write(sock, "sendfile:", strlen("sendfile:"));
@@ -524,8 +520,6 @@ void serverUpdate(char* projName, int sock)
 		write(sock, "1:", 2);
 		writeFToSocket(sock, projName, ".Manifest");
 	}
-
-    
 }
 void serverCommit(char* projName, int sock)
 {
