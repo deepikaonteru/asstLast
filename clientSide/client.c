@@ -601,6 +601,79 @@ void commit(char* projName)
     
 }
 
+void rollback(char* projName, char* version)
+{
+
+    int sock, port, numBytes;
+    struct sockaddr_in serverAddr;
+    struct hostent* server;
+
+    //read from .configure file to obtain IP and port#
+    int fd = open("./.configure", O_RDONLY);
+        if(fd == -1) { //if file does not exist
+		printf("Error: missing .configure\n");
+		close(fd);
+		return;
+	}
+
+    fd = open("./.configure", O_RDONLY);
+    port = getPortNum(fd);
+    close(fd);
+
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if(sock < 0)
+    {
+        printf("Error: socket failed to open.\n");
+        return;
+    }
+
+    fd = open("./.configure", O_RDONLY);
+    char hostName[256];
+    getHostName(fd, hostName);
+    server = gethostbyname(hostName);
+    if(server == NULL)
+    {
+        printf("Error: no such host.\n");
+        return;
+    }
+
+    bzero((char*)(&serverAddr), sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    bcopy((char*)(server->h_addr), (char*)(&serverAddr.sin_addr.s_addr), server->h_length);
+    serverAddr.sin_port = htons(port);
+
+    if(connect(sock, (struct sockaddr*)(&serverAddr), sizeof(serverAddr)) < 0)
+    {
+        printf("Error: could not connect.\n");
+        return;
+    }
+
+    // Request to get project from server
+    //<lengthAfterFirstColon>:roll:<projName>:<version>
+    char* baseCmd = (char*)(malloc((strlen("roll:") + strlen(projName) + 1 + strlen(version)) * sizeof(char)));
+    strcpy(baseCmd, "roll:");
+    strcat(baseCmd, projName);
+    strcat(baseCmd, ":");
+    strcat(baseCmd, version);
+    strcat(baseCmd, "\0");
+
+    int numBytesToSend = strlen(baseCmd);
+    char numBytesBuffer[10];
+    memset(numBytesBuffer, '\0', 10 * sizeof(char));
+    sprintf(numBytesBuffer, "%d", numBytesToSend);
+
+    char* fullCmd = (char*)(malloc((strlen(numBytesBuffer) + 1 + strlen(baseCmd) + 1) * sizeof(char)));
+    strcpy(fullCmd, numBytesBuffer);
+    strcat(fullCmd, ":");
+    strcat(fullCmd, baseCmd);
+    strcat(fullCmd, "\0");
+    //printf("%s\n", fullCmd);
+
+    send(sock, fullCmd, strlen(fullCmd), 0);
+    free(baseCmd);
+
+}
+
 void upgrade(char* projName)
 {
 
@@ -819,6 +892,7 @@ void upgrade(char* projName)
         
         //wait for client to send a message containing fileContents
         //responseCode
+        //sendfile:
         readTillDelimiter(socketBuffer, sock, ':');
         clearSocketBuffer(socketBuffer);
 
@@ -846,8 +920,8 @@ void upgrade(char* projName)
     }
     close(updateFD);
 
-    printf("Finished upgrading project.\n");
     send(sock, "fin:", strlen("fin:"), 0);
+    printf("Finished upgrading project.\n");
 }
 
 
@@ -2115,6 +2189,16 @@ int main(int argc, char *argv[])
 			printf("Error: Parameters missing\n");
 		} else {
             upgrade(argv[2]);
+		}
+    }
+
+    else if(strcmp(argv[1], "rollback") == 0)
+    {
+
+        if(argc < 4) {
+			printf("Error: Parameters missing\n");
+		} else {
+            rollback(argv[2], argv[3]);
 		}
     }
 
