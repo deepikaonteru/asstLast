@@ -236,6 +236,31 @@ int ProjInServerRepos(char *projName) {
 
 }
 
+void serverUpgrade(char* projName, int sock)
+{
+     //if it does not exist on server, server reports that project DNE, end command
+    char* pathToProj = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 75) * sizeof(char)));
+    strcpy(pathToProj, SERVER_REPOS);
+    strcat(pathToProj, "/");
+    strcat(pathToProj, projName);
+
+	if(!ProjInServerRepos(projName)) {
+		writeErrorToSocket(sock, "Project does not exist.");
+
+	}
+    else {
+
+        // Read .update file now.
+			
+		// Build path to the .update file locally on server.
+        char* pathToDotUpdate = (char*)(malloc((strlen(SERVER_REPOS) + strlen("/") + strlen(projName) + 1 + strlen(".Update")) * sizeof(char)));
+		
+
+    }
+    
+
+}
+
 void serverCheckout(char* projName, int sock)
 {
     //if it does not exist on server, server reports that project DNE, end command
@@ -1005,6 +1030,12 @@ int main(int argc, char *argv[])
                 {
                     char* projName = strchr(fullCmdBuf, ':') + 1;
                     serverUpdate(projName, newSocket);
+                }
+
+                 if(strcmp(cmdBuf, "upg") == 0)
+                {
+                    char* projName = strchr(fullCmdBuf, ':') + 1;
+                    serverUpgrade(projName, newSocket);
                 }
 
                 if(strcmp(cmdBuf, "push") == 0)

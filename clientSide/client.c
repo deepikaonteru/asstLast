@@ -601,6 +601,69 @@ void commit(char* projName)
     
 }
 
+void upgrade(char* projName)
+{
+
+    //Build path to project
+    char* pathToProject = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName))));
+    sprintf(pathToProject, "%s/%s", CLIENT_REPOS, projName);
+
+    // Check if project exists
+	if(projExistsInClient(pathToProject) == 0) {
+		printf("Error: Project does not exist in local repo.\n");
+        free(pathToProject);
+		return;
+	}
+
+    //if there is no .Update on the client side or if .Conflict exists fail
+    char* pathToDotUpdate = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(DOT_UPDATE))));
+    sprintf(pathToDotUpdate, "%s/%s/%s", CLIENT_REPOS, projName,DOT_UPDATE);
+    printf("%s\n", pathToDotUpdate);
+    if(fileExistsCheck(pathToDotUpdate)==0)   
+    {
+		printf("Error: Call update on project first.\n");
+        free(pathToProject);
+        free(pathToDotUpdate);
+        return;
+    } 
+
+    if(fileExistsCheck(pathToDotUpdate) && fileSize(pathToDotUpdate)==0)
+    {
+        printf("Error: Up to Date.\n");
+        free(pathToProject);
+        free(pathToDotUpdate);
+        free(pathToDotUpdate);
+        return;
+
+    }
+
+    char* pathToDotConflict = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + strlen("/") + strlen(projName) + strlen("/") + strlen(DOT_CONFLICT))));
+    sprintf(pathToDotConflict, "%s/%s/%s", CLIENT_REPOS, projName,DOT_CONFLICT);
+    printf("%s\n", pathToDotConflict);
+
+    if(fileExistsCheck(pathToDotConflict)==0)   
+    {
+		printf("Error: Resolve the conflicts first and update project again.\n");
+        free(pathToProject);
+        free(pathToDotUpdate);
+        free(pathToDotUpdate);
+        free(pathToDotConflict);
+        return;
+    } 
+
+    //apply the changes in the .Update file
+
+    
+
+
+
+
+
+
+
+
+}
+
 
 void update(char* projName)
 {
@@ -728,7 +791,7 @@ void update(char* projName)
 
         if(localManifestList->versionNum == serverManifestList->versionNum)
         {
-            printf("Up to date!\n");
+            printf("Up to Date.\n");
             close(updateFD);
             char* pathToConflict = (char*)(malloc(sizeof(char) * (strlen(CLIENT_REPOS) + 1 + strlen(projName) + 1 + strlen(DOT_CONFLICT))));
             remove(pathToConflict);
@@ -1716,11 +1779,19 @@ int main(int argc, char *argv[])
     }
     else if(strcmp(argv[1], "remove") == 0)
     {
-        removeFile(argv[2], argv[3]);
+        if(argc < 4) {
+			printf("Error: Parameters missing\n");
+		} else {
+            removeFile(argv[2], argv[3]);
+		}
     }
      else if(strcmp(argv[1], "update") == 0)
     {
-        update(argv[2]);
+        if(argc < 3) {
+			printf("Error: Parameters missing\n");
+		} else {
+            update(argv[2]);
+		}
     }
     else if(strcmp(argv[1], "checkout") == 0)
     {
@@ -1746,7 +1817,12 @@ int main(int argc, char *argv[])
     }
     else if(strcmp(argv[1], "commit") == 0)
     {
-        commit(argv[2]);
+
+        if(argc < 3) {
+			printf("Error: Parameters missing\n");
+		} else {
+            commit(argv[2]);
+		}
 
         //COMMIT
         //Step 1: Fetch server's .Manifest for specified project
@@ -1774,7 +1850,14 @@ int main(int argc, char *argv[])
     }
     else if(strcmp(argv[1], "push") == 0)
     {
-        push(argv[2]);
+
+        if(argc < 3) {
+			printf("Error: Parameters missing\n");
+		} else {
+            push(argv[2]);
+		}
+
+
         //server builds this message to send to client
         //request:<numFilesNeededByServer>:<lengthFileOnePath>:<fileOnePath>:<lengthFileTwoPath>:<fileTwoPath>:...:<lengthFileNPath>:<fileNPath>
         
@@ -1837,6 +1920,16 @@ int main(int argc, char *argv[])
         //if client can't connect, FAIL
         //if the .Commit does not exist on the server, FAIL
         //if the .Commit files are not the same, FAIL (client has to call commit again)
+    }
+
+    else if(strcmp(argv[1], "upgrade") == 0)
+    {
+
+        if(argc < 3) {
+			printf("Error: Parameters missing\n");
+		} else {
+            upgrade(argv[2]);
+		}
     }
 
     //add step
