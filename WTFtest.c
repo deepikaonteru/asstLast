@@ -234,8 +234,8 @@ int main(int argc, char **argv)
 		create("HELLO");		
 		create("GOODBYE");
 		destroy("GOODBYE");
-		int fd1 = open("./HELLO/test.txt", O_CREAT | O_WRONLY | O_TRUNC, 0777);
-		int fd2 = open("./HELLO/test1.txt", O_CREAT | O_WRONLY | O_TRUNC, 0777);
+		int fd1 = open("./clientSide/clientRepos/HELLO/test.txt", O_CREAT | O_WRONLY | O_TRUNC, 0777);
+		int fd2 = open("./clientSide/clientRepos/HELLO/test1.txt", O_CREAT | O_WRONLY | O_TRUNC, 0777);
 		add("HELLO", "test.txt");
 		add("HELLO", "test1.txt");
 		//commit("HELLO");
@@ -255,38 +255,3 @@ int main(int argc, char **argv)
 	waitpid(pid1, &status, 0);
     return 0;
 }
-
-
-/*
-void serverProcess(pid_t pid)
-{
-    system("./serverSide/WTFserver 9726");
-}
-
-void main(void)
-{
-    system("./clientSide/WTF configure 127.0.0.1 9726");
-
-    pid_t pid;
-    pid = fork();
-    if(pid == 0) {
-        serverProcess(pid);
-    }
-    else {
-        /*
-        system("./clientSide/WTF create CS113");
-        system("echo asst1 > ./clientSide/clientRepos/CS113/asst1.txt");
-        system("echo asst2 > ./clientSide/clientRepos/CS113/asst2.txt");
-        system("./clientSide/WTF add CS113 asst1.txt");
-        system("./clientSide/WTF add CS113 asst2.txt");
-        //system("./clientSide/WTF commit CS112");
-        //system("./clientSide/WTF push CS112");
-        //system("./clientSide/WTF update CS111");
-        //system("./clientSide/WTF upgrade CS111");
-        printf("All commands run successfully.\n");*/
-
-/*
-        kill(getpid(), SIGKILL);
-    }
-        
-}*/
